@@ -82,6 +82,21 @@
   const UI_MARGIN = 0.15;     // margin from each screen edge (world units at z=UI_Z)
   const LINK_GAP = 0.12;      // spacing between menu items (extra gap beyond their height)
 
+
+  function showContactOverlay() {
+    const el = document.getElementById('contact-overlay');
+    if (!el) return;
+    el.classList.remove('hidden');
+    el.setAttribute('aria-hidden', 'false');
+  }
+
+  function hideContactOverlay() {
+    const el = document.getElementById('contact-overlay');
+    if (!el) return;
+    el.classList.add('hidden');
+    el.setAttribute('aria-hidden', 'true');
+  }
+
   // returns {halfW, halfH} of the frustum slice at distance d=UI_Z
   function viewportHalfAtDepth(d = UI_Z) {
     const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5) * d;
@@ -430,6 +445,7 @@
       // provisional until GLB gives us ground
       get cam() { return camFromSection(sections.home, new THREE.Vector3(0, 0, 6), new THREE.Vector3(0, 0, 0)); },
       enter: () => {
+        hideContactOverlay();
         sections.home.visible = true;
         cube.visible = false;
         sphere.visible = false;
@@ -442,6 +458,7 @@
       name: 'Projects',
       get cam() { return camFromSection(sections.project, new THREE.Vector3(0, 0, 5), new THREE.Vector3(0, 0, 0)); },
       enter: () => {
+        hideContactOverlay();
         sections.home.visible = false;
         cube.visible = false;
         sphere.visible = true;
@@ -455,6 +472,7 @@
       name: 'People',
       get cam() { return camFromSection(sections.people, new THREE.Vector3(0, 0, 5), new THREE.Vector3(0, 0, 0)); },
       enter: () => {
+        hideContactOverlay();
         sections.home.visible = false;
         cube.visible = true;
         sphere.visible = true; // positioned in its own section; still hidden by camera framing
@@ -474,6 +492,7 @@
       name: 'Contact',
       get cam() { return camFromSection(sections.contact, new THREE.Vector3(0, 0, 5), new THREE.Vector3(0, 0, 0)); },
       enter: () => {
+        showContactOverlay();
         sections.home.visible = false;
         cube.visible = false;
         sphere.visible = false;
@@ -751,7 +770,19 @@
       Projects: 'Open-source tools and interactive experiences for mesoscale biology.',
       Contacts: 'Say hello: autin@scripps.edu — let’s build weird & useful things.'
     };
-
+    if (which === 'Contact') {
+      // remove any 3D panel if present
+      if (panelMesh) {
+        panelMesh.parent?.remove(panelMesh);
+        panelMesh.geometry?.dispose?.();
+        panelMesh.material?.map?.dispose?.();
+        panelMesh.material?.dispose?.();
+        panelMesh = null;
+      }
+      showContactOverlay();
+      return;
+    }
+    hideContactOverlay(); // for all other panels
     const projectBlurb = (name) => ({
       title: name,
       body:
@@ -1329,6 +1360,8 @@
   onMount(() => {
     init();
     animate();
+    const closeBtn = document.getElementById('contact-close');
+    if (closeBtn) closeBtn.addEventListener('click', hideContactOverlay);
     return () => {
       window.removeEventListener('resize', onResize);
       window.removeEventListener('wheel', onWheel);
@@ -1349,6 +1382,86 @@
     mix-blend-mode:multiply; opacity:.9;
   }
   .chip{ pointer-events:auto; padding:6px 10px; border-radius:9999px; background:rgba(0,0,0,.06); border:1px solid rgba(0,0,0,.12); font-size:12px; }
+
+  /* CONTACT OVERLAY */
+  .contact {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    z-index: 20;
+    pointer-events: none;
+  }
+  .contact.hidden { display: none; }
+
+  .contact .card {
+    width: min(900px, 94vw);
+    max-height: min(90vh, 1100px);
+    overflow: auto;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.97);
+    box-shadow: 0 20px 60px rgba(0,0,0,.18);
+    padding: clamp(16px, 2.5vw, 28px);
+    pointer-events: auto;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    color: #0f1115;
+  }
+
+  .contact .top {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .contact .top .title h2 { margin: 0 0 4px 0; font-size: clamp(20px, 2.2vw, 28px); }
+  .contact .top .title .affil { margin: 0; opacity: .85; font-size: clamp(14px, 1.6vw, 16px); }
+  .contact .top .logo img, .contact .top .logo span { height: 36px; display: inline-block; }
+
+  .contact .rows { display: grid; gap: 10px; margin: 10px 0 14px; }
+  .contact .row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; align-items: start; }
+  .contact .label { font-weight: 700; opacity: .8; }
+  .contact .value .name { font-weight: 600; }
+  .contact .value a { color: #0a66c2; text-decoration: none; }
+  .contact .value a:hover { text-decoration: underline; }
+
+  .contact .mapwrap {
+    margin-top: 8px;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(0,0,0,.08);
+  }
+  .contact .mapwrap iframe {
+    display: block;
+    width: 100%;
+    height: min(56vh, 520px);
+    border: 0;
+  }
+
+  .contact .social {
+    display: flex;
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .contact .icon {
+    width: 40px; height: 40px; border-radius: 999px;
+    background: #0f1115; color: #fff; display: grid; place-items: center;
+    text-decoration: none; transition: transform .15s ease, background .15s ease;
+}
+.contact .icon:hover { transform: translateY(-1px); background: #0a66c2; }
+
+.contact .close {
+  margin-top: 14px;
+  border: 0; border-radius: 999px;
+  padding: 10px 16px; font-weight: 600;
+  background: #0f1115; color: #fff; cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  .contact .row { grid-template-columns: 1fr; }
+  .contact .label { opacity: .6; }
+}
+
 </style>
 
 <div class="stage" bind:this={container}></div>
@@ -1356,4 +1469,79 @@
 <div class="ui">
   <div class="chip">Scroll to navigate</div>
   <div class="chip">{roomLoaded ? ['Home','Projects','People','Contact'][idx] : ['Projects','People','Contact'][idx]}</div>
+</div>
+
+<!-- CONTACT OVERLAY -->
+<div id="contact-overlay" class="contact hidden" aria-hidden="true">
+  <div class="card">
+    <header class="top">
+      <div class="title">
+        <h2>Ludo’s Lab — Contact</h2>
+        <p class="affil">
+          Department of Integrative Structural and Computational Biology at Scripps Research
+        </p>
+      </div>
+      <div class="logo">
+        <img
+          src="./assets/images/logo_scripps.png"
+          alt="Scripps Research"
+          on:error={(e) => {
+            const span = document.createElement('span');
+            span.textContent = 'Scripps Research';
+            e.currentTarget.replaceWith(span);
+          }}
+        />
+      </div>
+    </header>
+
+    <div class="rows">
+      <div class="row">
+        <div class="label">PI</div>
+        <div class="value">
+          <div class="name">Ludovic Autin</div>
+          <a href="mailto:autin@scripps.edu">autin@scripps.edu</a>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="label">Admin</div>
+        <div class="value">
+          <div class="name">Michelle Wilson</div>
+          <a href="mailto:michelle@scripps.edu">michelle@scripps.edu</a>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="label">Address</div>
+        <div class="value">
+          <div>10550 North Torrey Pines Rd</div>
+          <div>La Jolla, CA 92037</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mapwrap" aria-label="Map to Scripps Research">
+      <iframe
+        title="Scripps Research Map"
+        loading="lazy"
+        referrerpolicy="no-referrer-when-downgrade"
+        src="https://www.google.com/maps?q=10550+N+Torrey+Pines+Rd,+La+Jolla,+CA+92037&output=embed">
+      </iframe>
+    </div>
+
+    <div class="social">
+      <a class="icon" href="https://x.com/autinlab" target="_blank" rel="noreferrer" aria-label="X">
+        <!-- X logo -->
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M18.244 2H21l-6.51 7.44L22 22h-6.9l-4.54-5.9L4.5 22H2l6.98-7.98L2 2h6.9l4.2 5.46L18.244 2Zm-2.4 18h2.41L8.27 4h-2.5l10.07 16Z" fill="currentColor"/></svg>
+      </a>
+      <a class="icon" href="https://github.com/autinlab" target="_blank" rel="noreferrer" aria-label="GitHub">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.79 23.4c.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.41-4.04-1.41-.55-1.39-1.35-1.76-1.35-1.76-1.1-.75.08-.74.08-.74 1.22.09 1.86 1.25 1.86 1.25 1.08 1.85 2.83 1.31 3.52 1 .11-.8.42-1.31.76-1.61-2.66-.3-5.46-1.33-5.46-5.92 0-1.31.47-2.39 1.24-3.23-.12-.3-.54-1.52.12-3.17 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.3-1.55 3.3-1.23 3.3-1.23.66 1.65.24 2.87.12 3.17.77.84 1.24 1.92 1.24 3.23 0 4.6-2.8 5.61-5.47 5.91.43.37.81 1.1.81 2.22v3.3c0 .32.21.69.82.58A12 12 0 0 0 12 .5Z" fill="currentColor"/></svg>
+      </a>
+      <a class="icon" href="https://bsky.app/profile/autinlab.bsky.social" target="_blank" rel="noreferrer" aria-label="Bluesky">
+        <svg viewBox="0 0 512 512" width="22" height="22" aria-hidden="true"><path d="M256 256c62-101 140-173 182-197 26-15 54-22 74-10 19 11 14 44-2 79-26 57-88 126-139 165 71-13 141-29 157 12 9 22-3 49-19 67-46 52-129-2-179-41 9 51 18 113-4 139-17 21-47 24-70 0-22-23-22-85-13-139-51 39-133 93-179 41-16-18-28-45-19-67 16-41 86-25 157-12-51-39-113-108-139-165-16-35-21-68-2-79 20-12 48-5 74 10 42 24 120 96 182 197Z" fill="currentColor"/></svg>
+      </a>
+    </div>
+
+    <button class="close" id="contact-close">Close</button>
+  </div>
 </div>

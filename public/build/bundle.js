@@ -24,6 +24,14 @@ var app = (function () {
     function safe_not_equal(a, b) {
         return a != a ? b == b : a !== b || ((a && typeof a === 'object') || typeof a === 'function');
     }
+    let src_url_equal_anchor;
+    function src_url_equal(element_src, url) {
+        if (!src_url_equal_anchor) {
+            src_url_equal_anchor = document.createElement('a');
+        }
+        src_url_equal_anchor.href = url;
+        return element_src === src_url_equal_anchor.href;
+    }
     function is_empty(obj) {
         return Object.keys(obj).length === 0;
     }
@@ -47,11 +55,18 @@ var app = (function () {
     function element(name) {
         return document.createElement(name);
     }
+    function svg_element(name) {
+        return document.createElementNS('http://www.w3.org/2000/svg', name);
+    }
     function text(data) {
         return document.createTextNode(data);
     }
     function space() {
         return text(' ');
+    }
+    function listen(node, event, handler, options) {
+        node.addEventListener(event, handler, options);
+        return () => node.removeEventListener(event, handler, options);
     }
     function attr(node, attribute, value) {
         if (value == null)
@@ -349,6 +364,21 @@ var app = (function () {
     function detach_dev(node) {
         dispatch_dev('SvelteDOMRemove', { node });
         detach(node);
+    }
+    function listen_dev(node, event, handler, options, has_prevent_default, has_stop_propagation, has_stop_immediate_propagation) {
+        const modifiers = options === true ? ['capture'] : options ? Array.from(Object.keys(options)) : [];
+        if (has_prevent_default)
+            modifiers.push('preventDefault');
+        if (has_stop_propagation)
+            modifiers.push('stopPropagation');
+        if (has_stop_immediate_propagation)
+            modifiers.push('stopImmediatePropagation');
+        dispatch_dev('SvelteDOMAddEventListener', { node, event, handler, modifiers });
+        const dispose = listen(node, event, handler, options);
+        return () => {
+            dispatch_dev('SvelteDOMRemoveEventListener', { node, event, handler, modifiers });
+            dispose();
+        };
     }
     function attr_dev(node, attribute, value) {
         attr(node, attribute, value);
@@ -88795,6 +88825,64 @@ void main() {
     	: ['Projects', 'People', 'Contact'][/*idx*/ ctx[2]]) + "";
 
     	let t3;
+    	let t4;
+    	let div23;
+    	let div22;
+    	let header;
+    	let div4;
+    	let h2;
+    	let t6;
+    	let p;
+    	let t8;
+    	let div5;
+    	let img;
+    	let img_src_value;
+    	let t9;
+    	let div19;
+    	let div9;
+    	let div6;
+    	let t11;
+    	let div8;
+    	let div7;
+    	let t13;
+    	let a0;
+    	let t15;
+    	let div13;
+    	let div10;
+    	let t17;
+    	let div12;
+    	let div11;
+    	let t19;
+    	let a1;
+    	let t21;
+    	let div18;
+    	let div14;
+    	let t23;
+    	let div17;
+    	let div15;
+    	let t25;
+    	let div16;
+    	let t27;
+    	let div20;
+    	let iframe;
+    	let iframe_src_value;
+    	let t28;
+    	let div21;
+    	let a2;
+    	let svg0;
+    	let path0;
+    	let t29;
+    	let a3;
+    	let svg1;
+    	let path1;
+    	let t30;
+    	let a4;
+    	let svg2;
+    	let path2;
+    	let t31;
+    	let button;
+    	let mounted;
+    	let dispose;
 
     	const block = {
     		c: function create() {
@@ -88806,14 +88894,188 @@ void main() {
     			t2 = space();
     			div2 = element("div");
     			t3 = text(t3_value);
-    			attr_dev(div0, "class", "stage svelte-1f8b68n");
-    			add_location(div0, file, 1349, 0, 47005);
-    			attr_dev(div1, "class", "chip svelte-1f8b68n");
-    			add_location(div1, file, 1352, 2, 47073);
-    			attr_dev(div2, "class", "chip svelte-1f8b68n");
-    			add_location(div2, file, 1353, 2, 47118);
-    			attr_dev(div3, "class", "ui svelte-1f8b68n");
-    			add_location(div3, file, 1351, 0, 47054);
+    			t4 = space();
+    			div23 = element("div");
+    			div22 = element("div");
+    			header = element("header");
+    			div4 = element("div");
+    			h2 = element("h2");
+    			h2.textContent = "Ludo’s Lab — Contact";
+    			t6 = space();
+    			p = element("p");
+    			p.textContent = "Department of Integrative Structural and Computational Biology at Scripps Research";
+    			t8 = space();
+    			div5 = element("div");
+    			img = element("img");
+    			t9 = space();
+    			div19 = element("div");
+    			div9 = element("div");
+    			div6 = element("div");
+    			div6.textContent = "PI";
+    			t11 = space();
+    			div8 = element("div");
+    			div7 = element("div");
+    			div7.textContent = "Ludovic Autin";
+    			t13 = space();
+    			a0 = element("a");
+    			a0.textContent = "autin@scripps.edu";
+    			t15 = space();
+    			div13 = element("div");
+    			div10 = element("div");
+    			div10.textContent = "Admin";
+    			t17 = space();
+    			div12 = element("div");
+    			div11 = element("div");
+    			div11.textContent = "Michelle Wilson";
+    			t19 = space();
+    			a1 = element("a");
+    			a1.textContent = "michelle@scripps.edu";
+    			t21 = space();
+    			div18 = element("div");
+    			div14 = element("div");
+    			div14.textContent = "Address";
+    			t23 = space();
+    			div17 = element("div");
+    			div15 = element("div");
+    			div15.textContent = "10550 North Torrey Pines Rd";
+    			t25 = space();
+    			div16 = element("div");
+    			div16.textContent = "La Jolla, CA 92037";
+    			t27 = space();
+    			div20 = element("div");
+    			iframe = element("iframe");
+    			t28 = space();
+    			div21 = element("div");
+    			a2 = element("a");
+    			svg0 = svg_element("svg");
+    			path0 = svg_element("path");
+    			t29 = space();
+    			a3 = element("a");
+    			svg1 = svg_element("svg");
+    			path1 = svg_element("path");
+    			t30 = space();
+    			a4 = element("a");
+    			svg2 = svg_element("svg");
+    			path2 = svg_element("path");
+    			t31 = space();
+    			button = element("button");
+    			button.textContent = "Close";
+    			attr_dev(div0, "class", "stage svelte-1euykpo");
+    			add_location(div0, file, 1466, 0, 50432);
+    			attr_dev(div1, "class", "chip svelte-1euykpo");
+    			add_location(div1, file, 1469, 2, 50500);
+    			attr_dev(div2, "class", "chip svelte-1euykpo");
+    			add_location(div2, file, 1470, 2, 50545);
+    			attr_dev(div3, "class", "ui svelte-1euykpo");
+    			add_location(div3, file, 1468, 0, 50481);
+    			attr_dev(h2, "class", "svelte-1euykpo");
+    			add_location(h2, file, 1478, 8, 50849);
+    			attr_dev(p, "class", "affil svelte-1euykpo");
+    			add_location(p, file, 1479, 8, 50887);
+    			attr_dev(div4, "class", "title");
+    			add_location(div4, file, 1477, 6, 50821);
+    			if (!src_url_equal(img.src, img_src_value = "./assets/images/logo_scripps.png")) attr_dev(img, "src", img_src_value);
+    			attr_dev(img, "alt", "Scripps Research");
+    			attr_dev(img, "class", "svelte-1euykpo");
+    			add_location(img, file, 1484, 8, 51057);
+    			attr_dev(div5, "class", "logo");
+    			add_location(div5, file, 1483, 6, 51030);
+    			attr_dev(header, "class", "top svelte-1euykpo");
+    			add_location(header, file, 1476, 4, 50794);
+    			attr_dev(div6, "class", "label svelte-1euykpo");
+    			add_location(div6, file, 1498, 8, 51435);
+    			attr_dev(div7, "class", "name svelte-1euykpo");
+    			add_location(div7, file, 1500, 10, 51501);
+    			attr_dev(a0, "href", "mailto:autin@scripps.edu");
+    			attr_dev(a0, "class", "svelte-1euykpo");
+    			add_location(a0, file, 1501, 10, 51549);
+    			attr_dev(div8, "class", "value");
+    			add_location(div8, file, 1499, 8, 51471);
+    			attr_dev(div9, "class", "row svelte-1euykpo");
+    			add_location(div9, file, 1497, 6, 51409);
+    			attr_dev(div10, "class", "label svelte-1euykpo");
+    			add_location(div10, file, 1506, 8, 51667);
+    			attr_dev(div11, "class", "name svelte-1euykpo");
+    			add_location(div11, file, 1508, 10, 51736);
+    			attr_dev(a1, "href", "mailto:michelle@scripps.edu");
+    			attr_dev(a1, "class", "svelte-1euykpo");
+    			add_location(a1, file, 1509, 10, 51786);
+    			attr_dev(div12, "class", "value");
+    			add_location(div12, file, 1507, 8, 51706);
+    			attr_dev(div13, "class", "row svelte-1euykpo");
+    			add_location(div13, file, 1505, 6, 51641);
+    			attr_dev(div14, "class", "label svelte-1euykpo");
+    			add_location(div14, file, 1514, 8, 51910);
+    			add_location(div15, file, 1516, 10, 51981);
+    			add_location(div16, file, 1517, 10, 52030);
+    			attr_dev(div17, "class", "value");
+    			add_location(div17, file, 1515, 8, 51951);
+    			attr_dev(div18, "class", "row svelte-1euykpo");
+    			add_location(div18, file, 1513, 6, 51884);
+    			attr_dev(div19, "class", "rows svelte-1euykpo");
+    			add_location(div19, file, 1496, 4, 51384);
+    			attr_dev(iframe, "title", "Scripps Research Map");
+    			attr_dev(iframe, "loading", "lazy");
+    			attr_dev(iframe, "referrerpolicy", "no-referrer-when-downgrade");
+    			if (!src_url_equal(iframe.src, iframe_src_value = "https://www.google.com/maps?q=10550+N+Torrey+Pines+Rd,+La+Jolla,+CA+92037&output=embed")) attr_dev(iframe, "src", iframe_src_value);
+    			attr_dev(iframe, "class", "svelte-1euykpo");
+    			add_location(iframe, file, 1523, 6, 52169);
+    			attr_dev(div20, "class", "mapwrap svelte-1euykpo");
+    			attr_dev(div20, "aria-label", "Map to Scripps Research");
+    			add_location(div20, file, 1522, 4, 52104);
+    			attr_dev(path0, "d", "M18.244 2H21l-6.51 7.44L22 22h-6.9l-4.54-5.9L4.5 22H2l6.98-7.98L2 2h6.9l4.2 5.46L18.244 2Zm-2.4 18h2.41L8.27 4h-2.5l10.07 16Z");
+    			attr_dev(path0, "fill", "currentColor");
+    			add_location(path0, file, 1534, 75, 52644);
+    			attr_dev(svg0, "viewBox", "0 0 24 24");
+    			attr_dev(svg0, "width", "22");
+    			attr_dev(svg0, "height", "22");
+    			attr_dev(svg0, "aria-hidden", "true");
+    			add_location(svg0, file, 1534, 8, 52577);
+    			attr_dev(a2, "class", "icon svelte-1euykpo");
+    			attr_dev(a2, "href", "https://x.com/autinlab");
+    			attr_dev(a2, "target", "_blank");
+    			attr_dev(a2, "rel", "noreferrer");
+    			attr_dev(a2, "aria-label", "X");
+    			add_location(a2, file, 1532, 6, 52450);
+    			attr_dev(path1, "d", "M12 .5a12 12 0 0 0-3.79 23.4c.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.41-4.04-1.41-.55-1.39-1.35-1.76-1.35-1.76-1.1-.75.08-.74.08-.74 1.22.09 1.86 1.25 1.86 1.25 1.08 1.85 2.83 1.31 3.52 1 .11-.8.42-1.31.76-1.61-2.66-.3-5.46-1.33-5.46-5.92 0-1.31.47-2.39 1.24-3.23-.12-.3-.54-1.52.12-3.17 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.3-1.55 3.3-1.23 3.3-1.23.66 1.65.24 2.87.12 3.17.77.84 1.24 1.92 1.24 3.23 0 4.6-2.8 5.61-5.47 5.91.43.37.81 1.1.81 2.22v3.3c0 .32.21.69.82.58A12 12 0 0 0 12 .5Z");
+    			attr_dev(path1, "fill", "currentColor");
+    			add_location(path1, file, 1537, 75, 53005);
+    			attr_dev(svg1, "viewBox", "0 0 24 24");
+    			attr_dev(svg1, "width", "22");
+    			attr_dev(svg1, "height", "22");
+    			attr_dev(svg1, "aria-hidden", "true");
+    			add_location(svg1, file, 1537, 8, 52938);
+    			attr_dev(a3, "class", "icon svelte-1euykpo");
+    			attr_dev(a3, "href", "https://github.com/autinlab");
+    			attr_dev(a3, "target", "_blank");
+    			attr_dev(a3, "rel", "noreferrer");
+    			attr_dev(a3, "aria-label", "GitHub");
+    			add_location(a3, file, 1536, 6, 52825);
+    			attr_dev(path2, "d", "M256 256c62-101 140-173 182-197 26-15 54-22 74-10 19 11 14 44-2 79-26 57-88 126-139 165 71-13 141-29 157 12 9 22-3 49-19 67-46 52-129-2-179-41 9 51 18 113-4 139-17 21-47 24-70 0-22-23-22-85-13-139-51 39-133 93-179 41-16-18-28-45-19-67 16-41 86-25 157-12-51-39-113-108-139-165-16-35-21-68-2-79 20-12 48-5 74 10 42 24 120 96 182 197Z");
+    			attr_dev(path2, "fill", "currentColor");
+    			add_location(path2, file, 1540, 77, 53757);
+    			attr_dev(svg2, "viewBox", "0 0 512 512");
+    			attr_dev(svg2, "width", "22");
+    			attr_dev(svg2, "height", "22");
+    			attr_dev(svg2, "aria-hidden", "true");
+    			add_location(svg2, file, 1540, 8, 53688);
+    			attr_dev(a4, "class", "icon svelte-1euykpo");
+    			attr_dev(a4, "href", "https://bsky.app/profile/autinlab.bsky.social");
+    			attr_dev(a4, "target", "_blank");
+    			attr_dev(a4, "rel", "noreferrer");
+    			attr_dev(a4, "aria-label", "Bluesky");
+    			add_location(a4, file, 1539, 6, 53556);
+    			attr_dev(div21, "class", "social svelte-1euykpo");
+    			add_location(div21, file, 1531, 4, 52423);
+    			attr_dev(button, "class", "close svelte-1euykpo");
+    			attr_dev(button, "id", "contact-close");
+    			add_location(button, file, 1544, 4, 54154);
+    			attr_dev(div22, "class", "card svelte-1euykpo");
+    			add_location(div22, file, 1475, 2, 50771);
+    			attr_dev(div23, "id", "contact-overlay");
+    			attr_dev(div23, "class", "contact hidden svelte-1euykpo");
+    			attr_dev(div23, "aria-hidden", "true");
+    			add_location(div23, file, 1474, 0, 50700);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -88827,6 +89089,65 @@ void main() {
     			append_dev(div3, t2);
     			append_dev(div3, div2);
     			append_dev(div2, t3);
+    			insert_dev(target, t4, anchor);
+    			insert_dev(target, div23, anchor);
+    			append_dev(div23, div22);
+    			append_dev(div22, header);
+    			append_dev(header, div4);
+    			append_dev(div4, h2);
+    			append_dev(div4, t6);
+    			append_dev(div4, p);
+    			append_dev(header, t8);
+    			append_dev(header, div5);
+    			append_dev(div5, img);
+    			append_dev(div22, t9);
+    			append_dev(div22, div19);
+    			append_dev(div19, div9);
+    			append_dev(div9, div6);
+    			append_dev(div9, t11);
+    			append_dev(div9, div8);
+    			append_dev(div8, div7);
+    			append_dev(div8, t13);
+    			append_dev(div8, a0);
+    			append_dev(div19, t15);
+    			append_dev(div19, div13);
+    			append_dev(div13, div10);
+    			append_dev(div13, t17);
+    			append_dev(div13, div12);
+    			append_dev(div12, div11);
+    			append_dev(div12, t19);
+    			append_dev(div12, a1);
+    			append_dev(div19, t21);
+    			append_dev(div19, div18);
+    			append_dev(div18, div14);
+    			append_dev(div18, t23);
+    			append_dev(div18, div17);
+    			append_dev(div17, div15);
+    			append_dev(div17, t25);
+    			append_dev(div17, div16);
+    			append_dev(div22, t27);
+    			append_dev(div22, div20);
+    			append_dev(div20, iframe);
+    			append_dev(div22, t28);
+    			append_dev(div22, div21);
+    			append_dev(div21, a2);
+    			append_dev(a2, svg0);
+    			append_dev(svg0, path0);
+    			append_dev(div21, t29);
+    			append_dev(div21, a3);
+    			append_dev(a3, svg1);
+    			append_dev(svg1, path1);
+    			append_dev(div21, t30);
+    			append_dev(div21, a4);
+    			append_dev(a4, svg2);
+    			append_dev(svg2, path2);
+    			append_dev(div22, t31);
+    			append_dev(div22, button);
+
+    			if (!mounted) {
+    				dispose = listen_dev(img, "error", /*error_handler*/ ctx[4], false, false, false, false);
+    				mounted = true;
+    			}
     		},
     		p: function update(ctx, dirty) {
     			if (dirty[0] & /*roomLoaded, idx*/ 6 && t3_value !== (t3_value = (/*roomLoaded*/ ctx[1]
@@ -88840,6 +89161,10 @@ void main() {
     			/*div0_binding*/ ctx[3](null);
     			if (detaching) detach_dev(t0);
     			if (detaching) detach_dev(div3);
+    			if (detaching) detach_dev(t4);
+    			if (detaching) detach_dev(div23);
+    			mounted = false;
+    			dispose();
     		}
     	};
 
@@ -88869,6 +89194,20 @@ void main() {
     const UI_MARGIN = 0.15; // margin from each screen edge (world units at z=UI_Z)
     const LINK_GAP = 0.12; // spacing between menu items (extra gap beyond their height)
     const STEP_THRESHOLD = 80;
+
+    function showContactOverlay() {
+    	const el = document.getElementById('contact-overlay');
+    	if (!el) return;
+    	el.classList.remove('hidden');
+    	el.setAttribute('aria-hidden', 'false');
+    }
+
+    function hideContactOverlay() {
+    	const el = document.getElementById('contact-overlay');
+    	if (!el) return;
+    	el.classList.add('hidden');
+    	el.setAttribute('aria-hidden', 'true');
+    }
 
     function ensureSix(arr) {
     	const out = arr.slice(0, 6);
@@ -88981,7 +89320,14 @@ void main() {
     	}; // base y (camera space)
 
     	// --- PEOPLE / CUBE SETUP ---
-    	const peopleFaces = ['quentin.jpg', 'Ludo.png'];
+    	const peopleFaces = [
+    		'quentin.jpg',
+    		'Ludo.png',
+    		'quentin.jpg',
+    		'Ludo.png',
+    		'quentin.jpg',
+    		'Ludo.png'
+    	];
 
     	// returns {halfW, halfH} of the frustum slice at distance d=UI_Z
     	function viewportHalfAtDepth(d = UI_Z) {
@@ -89022,7 +89368,7 @@ void main() {
 
     		files.forEach((name, i) => {
     			// IMPORTANT: no leading slash so it works under /lab/
-    			const url = `assets/images/people/${name}`;
+    			const url = `./assets/images/people/${name}`;
 
     			loader.load(
     				url,
@@ -89386,6 +89732,7 @@ void main() {
     				return camFromSection(sections.home, new Vector3(0, 0, 6), new Vector3(0, 0, 0));
     			},
     			enter: () => {
+    				hideContactOverlay();
     				sections.home.visible = true;
     				cube.visible = false;
     				sphere.visible = false;
@@ -89404,6 +89751,7 @@ void main() {
     				return camFromSection(sections.project, new Vector3(0, 0, 5), new Vector3(0, 0, 0));
     			},
     			enter: () => {
+    				hideContactOverlay();
     				sections.home.visible = false;
     				cube.visible = false;
     				sphere.visible = true;
@@ -89430,6 +89778,7 @@ void main() {
     				return camFromSection(sections.people, new Vector3(0, 0, 5), new Vector3(0, 0, 0));
     			},
     			enter: () => {
+    				hideContactOverlay();
     				sections.home.visible = false;
     				cube.visible = true;
     				sphere.visible = true; // positioned in its own section; still hidden by camera framing
@@ -89469,6 +89818,7 @@ void main() {
     				return camFromSection(sections.contact, new Vector3(0, 0, 5), new Vector3(0, 0, 0));
     			},
     			enter: () => {
+    				showContactOverlay();
     				sections.home.visible = false;
     				cube.visible = false;
     				sphere.visible = false;
@@ -89764,6 +90114,22 @@ void main() {
     			Projects: 'Open-source tools and interactive experiences for mesoscale biology.',
     			Contacts: 'Say hello: autin@scripps.edu — let’s build weird & useful things.'
     		};
+
+    		if (which === 'Contact') {
+    			// remove any 3D panel if present
+    			if (panelMesh) {
+    				panelMesh.parent?.remove(panelMesh);
+    				panelMesh.geometry?.dispose?.();
+    				panelMesh.material?.map?.dispose?.();
+    				panelMesh.material?.dispose?.();
+    				panelMesh = null;
+    			}
+
+    			showContactOverlay();
+    			return;
+    		}
+
+    		hideContactOverlay(); // for all other panels
 
     		const projectBlurb = name => ({
     			title: name,
@@ -90420,6 +90786,8 @@ void main() {
     	onMount(() => {
     		init();
     		animate();
+    		const closeBtn = document.getElementById('contact-close');
+    		if (closeBtn) closeBtn.addEventListener('click', hideContactOverlay);
 
     		return () => {
     			window.removeEventListener('resize', onResize);
@@ -90442,6 +90810,12 @@ void main() {
     			$$invalidate(0, container);
     		});
     	}
+
+    	const error_handler = e => {
+    		const span = document.createElement('span');
+    		span.textContent = 'Scripps Research';
+    		e.currentTarget.replaceWith(span);
+    	};
 
     	$$self.$capture_state = () => ({
     		onMount,
@@ -90496,6 +90870,8 @@ void main() {
     		UI_Z,
     		UI_MARGIN,
     		LINK_GAP,
+    		showContactOverlay,
+    		hideContactOverlay,
     		viewportHalfAtDepth,
     		meshSize,
     		ensureSix,
@@ -90581,7 +90957,7 @@ void main() {
     		$$self.$inject_state($$props.$$inject);
     	}
 
-    	return [container, roomLoaded, idx, div0_binding];
+    	return [container, roomLoaded, idx, div0_binding, error_handler];
     }
 
     class App extends SvelteComponentDev {
