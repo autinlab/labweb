@@ -69,6 +69,10 @@
   // --- PEOPLE / CUBE SETUP ---
   const peopleFaces = [
     'quentin.jpg',
+    'Ludo.png',
+    'quentin.jpg',
+    'Ludo.png',
+    'quentin.jpg',
     'Ludo.png'
   ];
   // If you have fewer than 6 images, the rest will repeat the last one.
