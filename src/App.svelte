@@ -72,7 +72,27 @@
   const people = [
     {
       name: 'Ludovic Autin',
-      desc: `Ludovic Autin, Ph.D., Institute Investigator \nDr. Autin is an expert in computer graphics and molecular modeling with decades of experience developing computational techniques for mesoscale cellular modeling and visualization. He has been leading the development of the cellPACK suite, which enables the construction and generation of mesoscale atomistic models.`,
+      desc: `Ludovic Autin, Ph.D., Institute Investigator \nDr. Autin is an expert in computer graphics and molecular modeling with decades of experience developing computational techniques for mesoscale cellular modeling and visualization. He has been leading the development of the cellPACK suite.`,
+      img: 'Ludo.png'
+    },
+    {
+      name: 'Quentin Tallon',
+      desc: `Quentin Tallon, Postdoctoral Associate \nDr. Tallon has expertise in computer science and machine learning applied to biological data. He will develop the computational pipeline for generating synthetic tomograms and implement deep learning methods to improve interpretation of experimental cryo-ET data.`,
+      img: 'quentin.jpg'
+    },
+    {
+      name: 'Ludovic Autin',
+      desc: `Ludovic Autin, Ph.D., Institute Investigator \nDr. Autin is an expert in computer graphics and molecular modeling with decades of experience developing computational techniques for mesoscale cellular modeling and visualization. He has been leading the development of the cellPACK suite.`,
+      img: 'Ludo.png'
+    },
+    {
+      name: 'Quentin Tallon',
+      desc: `Quentin Tallon, Postdoctoral Associate \nDr. Tallon has expertise in computer science and machine learning applied to biological data. He will develop the computational pipeline for generating synthetic tomograms and implement deep learning methods to improve interpretation of experimental cryo-ET data.`,
+      img: 'quentin.jpg'
+    },
+        {
+      name: 'Ludovic Autin',
+      desc: `Ludovic Autin, Ph.D., Institute Investigator \nDr. Autin is an expert in computer graphics and molecular modeling with decades of experience developing computational techniques for mesoscale cellular modeling and visualization. He has been leading the development of the cellPACK suite`,
       img: 'Ludo.png'
     },
     {
@@ -460,6 +480,7 @@
         particlePoints && (particlePoints.visible = false);
         particleCollider && (particleCollider.visible = false);
         if (isProjectsOpen) { isProjectsOpen = false; layoutAccordion(true); }
+        if (personPanel)personPanel.visible = false;
       }
     },
     {
@@ -474,6 +495,7 @@
         particleCollider && (particleCollider.visible = false);
         gsap.fromTo(sphere.scale, { x:.85, y:.85, z:.85 }, { x:1, y:1, z:1, duration:.8, ease:'power2.out' });
         if (!isProjectsOpen) { isProjectsOpen = true; layoutAccordion(true); }
+        if (personPanel)personPanel.visible = false;
       }
     },
     {
@@ -494,6 +516,7 @@
           if (sh) { sh.uniforms.uHit.value.set(0,0,0); sh.uniforms.uPulse.value = 1.0; }
         });
         if (isProjectsOpen) { isProjectsOpen = false; layoutAccordion(true); }
+        if (personPanel)personPanel.visible = true;
       }
     },
     {
@@ -507,6 +530,7 @@
         particlePoints && (particlePoints.visible = true);
         particleCollider && (particleCollider.visible = true);
         if (isProjectsOpen) { isProjectsOpen = false; layoutAccordion(true); }
+        if (personPanel) personPanel.visible = false;
       }
     }
   ];
@@ -592,43 +616,90 @@
     return mesh;
   }
 
-  function makePanelMesh(title, body, { width = 1.8 } = {}) {
-    // simple rounded bg + text via canvas
+  function makePanelMesh(
+    title,
+    body,
+    {
+      width = 1.8,
+
+      // Canvas styling
+      bg = '#ffffff',                 // panel background
+      titleColor = '#0f1115',         // title text color
+      bodyColor  = '#0f1115',         // body text color
+      radius = 24,                    // corner radius
+      titleFont = 'bold 64px system-ui,-apple-system,Segoe UI,Roboto,sans-serif',
+      bodyFont  = '400 40px system-ui,-apple-system,Segoe UI,Roboto,sans-serif',
+
+      // Material / UI behavior
+      depthUI = true,                 // treat as UI: disable depth test/write
+      renderOrder = 100,              // ensure on top if depthUI
+
+      // Emissive options for MeshStandardMaterial
+      emissive = 0x000000,            // number | string (e.g. '#66ccff')
+      emissiveIntensity = 0.0,        // 0..n
+      emissiveFromMap = false         // use the same canvas texture as emissiveMap
+    } = {}
+  ) {
+    // --- draw canvas ---
     const ctx = document.createElement('canvas').getContext('2d');
     const W = 1024, H = 512;
-    ctx.canvas.width = W;
-    ctx.canvas.height = H;
+    ctx.canvas.width = W; ctx.canvas.height = H;
 
-    // bg rounded
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    roundRect(ctx, 16, 16, W-32, H-32, 24);
-    ctx.fill();
+    // background (opaque by default)
+    ctx.fillStyle = bg;
+    //ctx.lineWidth = 1;
+    //ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+    roundRect(ctx, 16, 16, W - 32, H - 32, radius);
+    //ctx.stroke();
 
     // title
-    ctx.fillStyle = '#0f1115';
-    ctx.font = 'bold 64px system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
+    ctx.fillStyle = titleColor;
+    ctx.font = titleFont;
+    ctx.textBaseline = 'top';
     ctx.fillText(title, 48, 72);
 
     // body
-    ctx.font = '400 40px system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
+    ctx.fillStyle = bodyColor;
+    ctx.font = bodyFont;
     wrapText(ctx, body, 48, 140, W - 96, 52);
 
+    // --- texture & material ---
     const tex = new THREE.CanvasTexture(ctx.canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
-    const mat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.8, metalness: 0.0 });
+
+    const mat = new THREE.MeshStandardMaterial({
+      map: tex,
+      transparent: false,
+      roughness: 0.8,
+      metalness: 0.0,
+      emissive: new THREE.Color(emissive),
+      emissiveIntensity,
+      emissiveMap: emissiveFromMap ? tex : null
+    });
     mat.side = THREE.DoubleSide;
-    // add ripple to panel (independent)
+
+    if (depthUI) {
+      mat.depthTest = false;
+      mat.depthWrite = false;
+    }
+
+    // ripple (your helper) — keep it, still works with emissive
     patchMaterialForRipple(mat, { color: 0x66ccff, fresnel: 0.8, falloff: 3.2, speed: 2.0, freq: 10.0 });
 
-    const aspect = W/H;
+    // --- mesh ---
+    const aspect = W / H;
     const height = width / aspect;
     const geo = new THREE.PlaneGeometry(width, height);
     const mesh = new THREE.Mesh(geo, mat);
+
     mesh.castShadow = false;
     mesh.receiveShadow = true;
     mesh.userData.isPanel = true;
+    if (depthUI) mesh.renderOrder = renderOrder;
+
     return mesh;
   }
+
 
   function roundRect(ctx,x,y,w,h,r){
     ctx.beginPath();
@@ -744,6 +815,7 @@
     const hits = raycaster.intersectObjects([cube, ...allUiMeshes], true);
     if (hits.length) {
       const hit = hits[0];
+      console.log(hit, (hit.object === cube));
       if (hit.object === cube) {
         showPersonInfo(hit);
         return;
@@ -827,7 +899,15 @@
       body  = linkContents[which] || '';
     }
 
-    panelMesh = makePanelMesh(title, body, { width: 2.0 });
+    panelMesh = makePanelMesh(title, body, {
+      width: 2.0,
+      bg: '#0f1115',
+      titleColor: '#e8f0f7',
+      bodyColor: '#c9d6e2',
+      emissive: 0x000000,
+      emissiveIntensity: 0.0,
+      emissiveFromMap: false
+    });
     camera.add(panelMesh);
 
     // left column under title
@@ -844,13 +924,14 @@
     anchorUI(true); // reflow left/right after panel creation
   }
 
+
   function showPersonInfo(hit) {
-    // determine which face of the cube was clicked
+    // map face  person
     const idx = Math.floor((hit.faceIndex || 0) / 2);
     const info = people[idx % people.length];
     if (!info) return;
 
-    // cleanup existing
+    // cleanup
     if (personPanel) {
       personPanel.parent?.remove(personPanel);
       personPanel.geometry?.dispose?.();
@@ -865,32 +946,52 @@
       personLine = null;
     }
 
-    // panel
-    personPanel = makePanelMesh(info.name, info.desc, { width: 2.2 });
+    // --- DEBUG: mark the clicked point in world space so we SEE it
+    const dbgSphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.03, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xff0066, depthTest: false })
+    );
+    dbgSphere.position.copy(hit.point);
+    sections.people.add(dbgSphere); // remove later once you see it
 
-    const start = hit.point.clone();
-    const normal = hit.face.normal.clone();
-    const worldNormal = normal.transformDirection(cube.matrixWorld).normalize();
-    const end = start.clone().addScaledVector(worldNormal, 1.2);
+    // Make the panel
+    personPanel = makePanelMesh(info.name, info.desc, {
+      width: 4.2,
+      bg: '#fff9ea',
+      titleColor: '#fdfeff',
+      bodyColor: '#fdfdfd',
+      emissive: '#66ccff',
+      emissiveIntensity: 1.18,
+      emissiveFromMap: true,    // subtle glow from the canvas texture
+      depthUI: true,            // keep as UI (always on top)
+      renderOrder: 20
+    });
+    // place slightly off the clicked face along face normal
+    // world hit + world normal
+    const startW = hit.point.clone();
+    const worldNormal = hit.face.normal.clone().transformDirection(cube.matrixWorld).normalize();
+    const endW = startW.clone().addScaledVector(worldNormal, 2.25);
 
-    personPanel.position.copy(end);
-    personPanel.lookAt(camera.position);
+    // convert to sections.people local space (since we parent to it)
+    const startL = sections.people.worldToLocal(startW.clone());
+    const endL   = sections.people.worldToLocal(endW.clone());
+    console.log(startL);
+    // UI/camera-space placement: always visible in the top-left column
     sections.people.add(personPanel);
+    personPanel.position.set(endL.x, endL.y, -2.0); // (x,y) relative to camera; z=-UI_Z-ish
+    personPanel.visible = true;
+    personPanel.renderOrder = 101;
     personPanel.scale.set(0.001,0.001,0.001);
     gsap.to(personPanel.scale, { x:1, y:1, z:1, duration:0.5, ease:'power2.out' });
-
-    // line
-    const lineGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0,0,0),
-      end.clone().sub(start)
-    ]);
-    const lineMat = new THREE.LineBasicMaterial({ color: 0x0f1115 });
-    personLine = new THREE.Line(lineGeo, lineMat);
-    personLine.position.copy(start);
-    personLine.scale.set(0,0,0);
-    sections.people.add(personLine);
-    gsap.to(personLine.scale, { x:1, y:1, z:1, duration:0.5, ease:'power2.out' });
+    if (personPanel.material) {
+      personPanel.material.depthTest = false;
+      personPanel.material.depthWrite = false;
+    }
+    personPanel.frustumCulled = false;
+    personPanel.userData.faceCamera = true; // keep facing camera (see animate() note below)
   }
+
+
 
   // ---------- PARTICLES as imposters (shader points) ----------
   function createParticles() {
@@ -1317,7 +1418,7 @@
       let py = halfH - UI_MARGIN;
       if (titleMesh) {
         const { h: th } = meshSize(titleMesh);
-        py = py - th - 0.06; // gap
+        py = py - th - 1.56; // gap
       }
       py = py - ph * 0.5;
       // if panel too tall for viewport, optionally hide or clamp
@@ -1389,7 +1490,9 @@
       m.position.set(ax + Math.sin(clock.elapsedTime * f) * A, ay, m.userData.anchorPos.z);
     });
     if (panelMesh) bump(panelMesh);
-
+    if (personPanel?.visible && personPanel.userData.faceCamera) {
+      personPanel.lookAt(camera.position);
+    }
     // update particles if visible
     if (particlePoints?.visible) updateParticles(dt);
     if (sphere?.visible) sphere.rotation.y += 0.003;
