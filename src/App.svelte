@@ -52,6 +52,8 @@
   let linkMeshes = [];
   let projectMeshes = [];
   let panelMesh = null; // floating window
+  let personPanel = null; // panel for people
+  let personLine = null;  // line connecting cube face to panel
 
   // --- responsive state ---
   let isMobile = false;
@@ -67,14 +69,20 @@
   const GAP_AFTER_PROJECTS = 0.16;       // extra gap before submenu
 
   // --- PEOPLE / CUBE SETUP ---
-  const peopleFaces = [
-    'quentin.jpg',
-    'Ludo.png',
-    'quentin.jpg',
-    'Ludo.png',
-    'quentin.jpg',
-    'Ludo.png'
+  const people = [
+    {
+      name: 'Ludovic Autin',
+      desc: `Ludovic Autin, Ph.D., Institute Investigator \nDr. Autin is an expert in computer graphics and molecular modeling with decades of experience developing computational techniques for mesoscale cellular modeling and visualization. He has been leading the development of the cellPACK suite, which enables the construction and generation of mesoscale atomistic models.`,
+      img: 'Ludo.png'
+    },
+    {
+      name: 'Quentin Tallon',
+      desc: `Quentin Tallon, Postdoctoral Associate \nDr. Tallon has expertise in computer science and machine learning applied to biological data. He will develop the computational pipeline for generating synthetic tomograms and implement deep learning methods to improve interpretation of experimental cryo-ET data.`,
+      img: 'quentin.jpg'
+    }
   ];
+
+  const peopleFaces = people.map(p => p.img);
   // If you have fewer than 6 images, the rest will repeat the last one.
 
   // --- viewport helpers (camera-local anchoring) ---
@@ -733,9 +741,15 @@
     mouse.set(nx, ny);
     raycaster.setFromCamera(mouse, camera);
 
-    const hits = raycaster.intersectObjects(allUiMeshes, true);
+    const hits = raycaster.intersectObjects([cube, ...allUiMeshes], true);
     if (hits.length) {
-      const obj = hits[0].object;
+      const hit = hits[0];
+      if (hit.object === cube) {
+        showPersonInfo(hit);
+        return;
+      }
+
+      const obj = hit.object;
       const which = obj.userData.key;
       const kind  = obj.userData.kind || 'link';
       if (kind === 'link' && which === 'Contact') {
@@ -745,8 +759,8 @@
       // menu navigate
       if (kind === 'link') {
         if (which === 'Home')    gotoByName('Home');          // virus (room)
-        if (which === 'Projects'){ 
-          isProjectsOpen = !isProjectsOpen; 
+        if (which === 'Projects'){
+          isProjectsOpen = !isProjectsOpen;
           layoutAccordion(true);
           gotoByName('Projects');                         // projects scene = sphere
         }
@@ -828,6 +842,54 @@
     panelMesh.visible = true;
 
     anchorUI(true); // reflow left/right after panel creation
+  }
+
+  function showPersonInfo(hit) {
+    // determine which face of the cube was clicked
+    const idx = Math.floor((hit.faceIndex || 0) / 2);
+    const info = people[idx % people.length];
+    if (!info) return;
+
+    // cleanup existing
+    if (personPanel) {
+      personPanel.parent?.remove(personPanel);
+      personPanel.geometry?.dispose?.();
+      personPanel.material?.map?.dispose?.();
+      personPanel.material?.dispose?.();
+      personPanel = null;
+    }
+    if (personLine) {
+      personLine.parent?.remove(personLine);
+      personLine.geometry?.dispose?.();
+      personLine.material?.dispose?.();
+      personLine = null;
+    }
+
+    // panel
+    personPanel = makePanelMesh(info.name, info.desc, { width: 2.2 });
+
+    const start = hit.point.clone();
+    const normal = hit.face.normal.clone();
+    const worldNormal = normal.transformDirection(cube.matrixWorld).normalize();
+    const end = start.clone().addScaledVector(worldNormal, 1.2);
+
+    personPanel.position.copy(end);
+    personPanel.lookAt(camera.position);
+    sections.people.add(personPanel);
+    personPanel.scale.set(0.001,0.001,0.001);
+    gsap.to(personPanel.scale, { x:1, y:1, z:1, duration:0.5, ease:'power2.out' });
+
+    // line
+    const lineGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0,0,0),
+      end.clone().sub(start)
+    ]);
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x0f1115 });
+    personLine = new THREE.Line(lineGeo, lineMat);
+    personLine.position.copy(start);
+    personLine.scale.set(0,0,0);
+    sections.people.add(personLine);
+    gsap.to(personLine.scale, { x:1, y:1, z:1, duration:0.5, ease:'power2.out' });
   }
 
   // ---------- PARTICLES as imposters (shader points) ----------
