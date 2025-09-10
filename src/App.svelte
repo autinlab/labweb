@@ -110,6 +110,38 @@
   const UI_MARGIN = 0.15;     // margin from each screen edge (world units at z=UI_Z)
   const LINK_GAP = 0.12;      // spacing between menu items (extra gap beyond their height)
 
+  // --- Orbit drag state ---
+  let isOrbiting = false;
+  let dragStart = new THREE.Vector2();
+  let dragLast  = new THREE.Vector2();
+  let vel2 = new THREE.Vector2(0, 0); // inertial angular velocity
+
+  const SPHERE = new THREE.Spherical();           // reused scratch
+  const ORBIT = {
+    rotateSpeed: 2.2,   // bigger = faster (radians per normalized px)
+    damping: 0.92,      // inertia damping each frame
+    phiMin: 0.08,       // up/down clamp (avoid poles)
+    phiMax: Math.PI - 0.08
+  };
+
+  let orbitRadius = null;
+
+  function camBaseToSpherical(out = SPHERE) {
+    const rel = new THREE.Vector3().copy(camBase).sub(camTarget);
+    out.setFromVector3(rel);
+    return out;
+  }
+
+  function camToSpherical(out = SPHERE) {
+    const rel = new THREE.Vector3().copy(camPos).sub(camTarget);
+    out.setFromVector3(rel);
+    return out;
+  }
+  function sphericalToCam(sph = SPHERE, out = camBase) {
+    const rel = new THREE.Vector3().setFromSpherical(sph);
+    out.copy(camTarget).add(rel);
+    return out;
+  }
 
   function showContactOverlay() {
     const el = document.getElementById('contact-overlay');
@@ -505,7 +537,7 @@
         hideContactOverlay();
         sections.home.visible = false;
         cube.visible = true;
-        sphere.visible = true; // positioned in its own section; still hidden by camera framing
+        sphere.visible = false; // positioned in its own section; still hidden by camera framing
         particlePoints && (particlePoints.visible = false);
         particleCollider && (particleCollider.visible = false);
         gsap.to(cube.rotation, { x: 0.6, y: 0.8, duration: 1.2, ease: 'power2.out' });
@@ -733,22 +765,55 @@
 
   function onTouchStart(e) {
     if (!e.touches?.length) return;
+    if (e.touches.length === 1) {
+      // single-finger = orbit
+      const t = e.touches[0];
+      isOrbiting = true;
+      dragStart.set(t.clientX, t.clientY);
+      dragLast.copy(dragStart);
+      vel2.set(0, 0);
+      gsap.killTweensOf(camBase);
+      gsap.killTweensOf(lookAtProxy);
+    } else {
+      isOrbiting = false;
+    }
+    // keep your scene-step gesture data too if you want
     touchStartY = e.touches[0].clientY;
     touchAccum = 0;
   }
 
   function onTouchMove(e) {
     if (!e.touches?.length) return;
+    if (isOrbiting && e.touches.length === 1) {
+      const t = e.touches[0];
+      const rect = renderer.domElement.getBoundingClientRect();
+      const dx = t.clientX - dragLast.x;
+      const dy = t.clientY - dragLast.y;
+      dragLast.set(t.clientX, t.clientY);
+
+      const sph = camToSpherical();
+      const scale = ORBIT.rotateSpeed / Math.max(1, Math.min(rect.width, rect.height));
+      sph.theta -= dx * scale * Math.PI;
+      sph.phi   -= dy * scale * Math.PI;
+      sph.phi = THREE.MathUtils.clamp(sph.phi, ORBIT.phiMin, ORBIT.phiMax);
+      sphericalToCam(sph, camBase);
+      vel2.set(-dx * scale * Math.PI, -dy * scale * Math.PI);
+      return; // skip swipe-to-step while orbiting
+    }
+
+    // (optional) keep your swipe-to-step logic for multi-finger or when not orbiting
     const dy = e.touches[0].clientY - touchStartY;
     touchAccum += dy;
     touchStartY = e.touches[0].clientY;
-
-    // reuse your STEP_THRESHOLD, flip sign so swipe up = next
     if (Math.abs(touchAccum) > STEP_THRESHOLD) {
       const dir = touchAccum < 0 ? 1 : -1;
       touchAccum = 0;
       stepScene(dir);
     }
+  }
+
+  function onTouchEnd() {
+    isOrbiting = false;
   }
 
   function onPointerMove(e) {
@@ -795,14 +860,28 @@
       }
     }
 
-    // Accordion logic (open if over Projects or any project item; close if over Contacts)
-    //const wantOpen  = hoverProjects || hoverAnyProjectItem;
-    //const wantClose = hoverContacts && !hoverProjects && !hoverAnyProjectItem;
+    if (isOrbiting) {
+      const dx = e.movementX ?? (e.clientX - dragLast.x);
+      const dy = e.movementY ?? (e.clientY - dragLast.y);
+      dragLast.set(e.clientX, e.clientY);
 
-    // tiny hysteresis so it doesn’t flicker when crossing gaps
-    //if (wantOpen && !isProjectsOpen) { isProjectsOpen = true;  layoutAccordion(true); }
-    //if (wantClose && isProjectsOpen) { isProjectsOpen = false; layoutAccordion(true); }
+      const sph = camBaseToSpherical();            // use camBase, not camPos
+      const scale = ORBIT.rotateSpeed / Math.max(1, Math.min(rect.width, rect.height));
+      sph.theta -= dx * scale * Math.PI;
+      sph.phi   -= dy * scale * Math.PI;
+      sph.phi = THREE.MathUtils.clamp(sph.phi, ORBIT.phiMin, ORBIT.phiMax);
 
+      // hard-lock distance
+      sph.radius = orbitRadius;
+
+      // no parallax while orbiting
+      offsetTarget.set(0, 0, 0);
+      offsetCurrent.set(0, 0, 0);
+
+      sphericalToCam(sph, camBase);
+      vel2.set(-dx * scale * Math.PI, -dy * scale * Math.PI);
+      return;
+    }
   }
 
   function onPointerDown(e) {
@@ -846,7 +925,27 @@
         if (!isProjectsOpen) { isProjectsOpen = true; layoutAccordion(true); }
         gotoByName('Projects');
       }
+      return;
     }
+    // Start orbit on background
+    isOrbiting = true;
+    dragStart.set(e.clientX, e.clientY);
+    dragLast.copy(dragStart);
+    vel2.set(0, 0);
+    orbitRadius = camBase.distanceTo(camTarget);
+
+    // freeze parallax so it doesn't push the camera
+    offsetTarget.set(0, 0, 0);
+    offsetCurrent.set(0, 0, 0);
+
+    // kill any camera tweens so orbit takes over instantly
+    gsap.killTweensOf(camBase);
+    gsap.killTweensOf(lookAtProxy);    
+  }
+
+  function onPointerUp(e) {
+    isOrbiting = false;
+    orbitRadius = null; // allow future scene jumps to set a new lock
   }
 
   function openPanel(which, kind='link') {
@@ -1345,6 +1444,11 @@
     renderer.domElement.addEventListener('pointerdown', onPointerDown, { passive: true });
     renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: true });
     renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: true });
+    renderer.domElement.addEventListener('touchend', onTouchEnd, { passive: true });
+    renderer.domElement.addEventListener('touchcancel', onTouchEnd, { passive: true });
+    renderer.domElement.addEventListener('pointerup', onPointerUp, { passive: true });
+    renderer.domElement.addEventListener('pointerleave', onPointerUp, { passive: true });
+
   
     updateResponsive(); 
   }
@@ -1519,6 +1623,22 @@
     }
     // keep satellites locked to camera-facing ring while open
     followProjectsOrbit({ radius: 1.6 * uiScale, lerp: 0.14 });
+    // inertial orbit when mouse/touch released
+    if (!isOrbiting && (Math.abs(vel2.x) + Math.abs(vel2.y)) > 1e-5) {
+      const sph = camBaseToSpherical();
+      if (orbitRadius == null) orbitRadius = sph.radius; // first frame after release
+      sph.theta += vel2.x;
+      sph.phi   += vel2.y;
+      sph.phi = THREE.MathUtils.clamp(sph.phi, ORBIT.phiMin, ORBIT.phiMax);
+      sph.radius = orbitRadius;               // keep distance fixed
+      sphericalToCam(sph, camBase);
+      vel2.multiplyScalar(ORBIT.damping);
+
+      // keep parallax off during inertial glide too
+      offsetTarget.set(0, 0, 0);
+      offsetCurrent.set(0, 0, 0);
+    }
+
     renderer.render(scene, camera);
   }
 
@@ -1532,6 +1652,8 @@
       window.removeEventListener('wheel', onWheel);
       renderer?.domElement?.removeEventListener('pointermove', onPointerMove);
       renderer?.domElement?.removeEventListener('pointerdown', onPointerDown);
+      renderer?.domElement?.removeEventListener('pointerup', onPointerUp);
+      renderer?.domElement?.removeEventListener('pointerleave', onPointerUp);
       renderer?.dispose?.();
     };
   });
