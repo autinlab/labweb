@@ -126,6 +126,217 @@
 
   let orbitRadius = null;
 
+  // --- ROOM EXPLOSION PREP ---
+  let roomPieces = [];          // { mesh, parent, basePos, baseQuat, baseScale, worldPos }
+  let roomCenter = new THREE.Vector3();
+  let explodeReady = false;
+
+  let flyTl = null;
+
+  const _tmpV = new THREE.Vector3();
+  function baseWorldPosOf(piece) {
+    const { mesh, parent, basePos } = piece;
+    parent.updateWorldMatrix(true, true);
+    return parent.localToWorld(_tmpV.copy(basePos));
+  }
+
+  function safeUnlock() {
+    isTransitioning = false;
+    flyTl = null;
+  }
+
+  function prepRoomExplode() {
+    if (!room) return;
+
+    room.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(room);
+    box.getCenter(roomCenter);
+
+    roomPieces = [];
+    room.traverse((o) => {
+      if (!o.isMesh) return;
+      o.updateWorldMatrix(true, false);
+
+      // capture ORIGINAL local transform (for perfect reset)
+      roomPieces.push({
+        mesh: o,
+        parent: o.parent,
+        basePos: o.position.clone(),
+        baseQuat: o.quaternion.clone(),
+        baseScale: o.scale.clone(),
+        worldPos: new THREE.Vector3().setFromMatrixPosition(o.matrixWorld),
+      });
+    });
+
+    explodeReady = roomPieces.length > 0;
+  }
+
+
+/////EXPLOSION
+
+  // lock input while the sequence runs
+  function lockInput() {
+    isTransitioning = true;
+    // freeze parallax so the camera path is clean
+    offsetTarget.set(0, 0, 0);
+    offsetCurrent.set(0, 0, 0);
+    gsap.killTweensOf(camBase);
+    gsap.killTweensOf(lookAtProxy);
+    gsap.killTweensOf(room);
+    gsap.killTweensOf(room.children);
+  }
+  function unlockInput() {
+    isTransitioning = false;
+  }
+
+  function transitionHomeToProjects() {
+    if (!room || !explodeReady) { gotoByName('Projects'); return; }
+    
+    // kill any previous run (if user spam-scrolls)
+    if (flyTl) { flyTl.kill(); flyTl = null; }
+  
+    lockInput();
+
+    // ALWAYS start from canonical base pose
+    resetRoomPieces();
+
+    // ensure home is visible / projects hidden at start
+    sections.home.visible = true;
+    sphere.visible = false;
+    projectMeshes.forEach(m => m.visible = false);
+
+    // camera path: from current Home cam to inside the room then towards Projects anchor
+    // pick a point a bit inside the bbox center
+    const inside = roomCenter.clone().add(new THREE.Vector3(0.0, 0.4, 0.0));
+    const look   = roomCenter.clone().add(new THREE.Vector3(0, 0.1, 0));
+
+    flyTl = gsap.timeline({
+      defaults:{ ease:'power3.inOut' },
+      onComplete: () => {
+        // handoff: show projects scene (sphere + satellites animation)
+        sections.home.visible = false;
+        sphere.visible = true;
+        isProjectsOpen = true;
+        layoutAccordion(true);
+        gotoByName('Projects'); // retween to your Projects cam
+        safeUnlock();
+      }
+    });
+
+    // step 1: subtle pull toward room before explosion
+    flyTl.to(camBase, { 
+      x: inside.x + 1.2, y: inside.y + 0.8, z: inside.z + 3.2, duration: 0.6 
+    }, 0);
+    flyTl.to(lookAtProxy, { 
+      x: look.x, y: look.y, z: look.z, duration: 0.6, 
+      onUpdate: () => camTarget.set(lookAtProxy.x, lookAtProxy.y, lookAtProxy.z)
+    }, 0);
+
+    // step 2: explode pieces outward while dollying inside
+    const EXPLODE_DIST = 1.8;
+    const EXPLODE_TIME = 0.9;
+
+    roomPieces.forEach(({ mesh, parent, basePos, baseQuat, worldPos }) => {
+      // world-space direction from room center to piece center
+      const dirW = new THREE.Vector3().subVectors(worldPos, roomCenter);
+      const len = Math.max(0.001, dirW.length());
+      dirW.multiplyScalar(1 / len);
+
+      // world target
+      const targetW = worldPos.clone().addScaledVector(dirW, EXPLODE_DIST * Math.log2(1.0 + len));
+
+      // convert world → parent-local so we tween the mesh’s LOCAL position
+      const targetL = parent.worldToLocal(targetW.clone());
+
+      // a small delta rotation around the explode axis (optional)
+      const axis = dirW.clone().normalize();
+      const deltaQuat = new THREE.Quaternion().setFromAxisAngle(axis, 0.35);
+      const targetQuat = baseQuat.clone().premultiply(deltaQuat);
+
+      gsap.to(mesh.position, { x: targetL.x, y: targetL.y, z: targetL.z, duration: EXPLODE_TIME, ease: 'power3.out' });
+      gsap.to(mesh.quaternion, { x: targetQuat.x, y: targetQuat.y, z: targetQuat.z, w: targetQuat.w, duration: EXPLODE_TIME, ease: 'power2.out' });
+    });
+
+
+    flyTl.to(camBase, {
+      x: inside.x, y: inside.y + 0.22, z: inside.z + 1.2,
+      duration: EXPLODE_TIME, ease:'power3.out'
+    }, 0.35);
+    flyTl.to(lookAtProxy, {
+      x: inside.x, y: inside.y, z: inside.z,
+      duration: EXPLODE_TIME, ease:'power3.out',
+      onUpdate: () => camTarget.set(lookAtProxy.x, lookAtProxy.y, lookAtProxy.z)
+    }, 0.35);
+
+    // step 3: fade room a bit as we transition to Projects (optional)
+    flyTl.to(room, { 
+      visible: true, duration: 0, onComplete: ()=>{} 
+    }, 0);
+  }
+
+  function transitionProjectsToHome() {
+    if (!room || !explodeReady) { gotoByName('Home'); return; }
+    
+    if (flyTl) { flyTl.kill(); flyTl = null; }
+
+    lockInput();
+
+    // ensure home is visible to see the implode
+    sections.home.visible = true;
+
+    flyTl = gsap.timeline({
+      defaults:{ ease:'power3.inOut' },
+      onComplete: () => {
+        // reset UI and hide project bits
+        isProjectsOpen = false;
+        layoutAccordion(true);
+        sphere.visible = false;
+        gotoByName('Home');
+        // return all meshes to base positions exactly
+        roomPieces.forEach(({ mesh, basePos }) => { mesh.position.copy(basePos); });
+        unlockInput();
+      }
+    });
+
+    // pull camera back out a bit
+    const box = new THREE.Box3().setFromObject(room);
+    const homeLook = roomCenter.clone().add(new THREE.Vector3(0, 0.1, 0));
+    const homePos  = roomCenter.clone().add(new THREE.Vector3(2.2, (box.min.y) + 1.6, 4.8));
+
+    flyTl.to(camBase, { x: homePos.x, y: homePos.y, z: homePos.z, duration: 0.9 }, 0);
+    flyTl.to(lookAtProxy, { 
+      x: homeLook.x, y: homeLook.y, z: homeLook.z, duration: 0.9, 
+      onUpdate: () => camTarget.set(lookAtProxy.x, lookAtProxy.y, lookAtProxy.z)
+    }, 0);
+
+    // implode the pieces back to their base poses
+    roomPieces.forEach(({ mesh, basePos }, i) => {
+      flyTl.to(mesh.position, { 
+        x: basePos.x, y: basePos.y, z: basePos.z, duration: 0.9, ease:'power3.in' 
+      }, 0.05 + i * 0.002);
+      flyTl.to(mesh.rotation, {
+        x: 0, y: 0, z: 0, duration: 0.9, ease:'power2.in'
+      }, 0.05 + i * 0.002);
+    });
+    flyTl.eventCallback('onComplete', () => { resetRoomPieces(); });
+  }
+
+  function resetRoomPieces() {
+    if (!explodeReady) return;
+    roomPieces.forEach(({ mesh, basePos, baseQuat, baseScale }) => {
+      gsap.killTweensOf(mesh.position);
+      gsap.killTweensOf(mesh.quaternion);
+      gsap.killTweensOf(mesh.rotation);
+      mesh.position.copy(basePos);
+      mesh.quaternion.copy(baseQuat);
+      mesh.scale.copy(baseScale);
+      mesh.updateMatrix();
+      mesh.updateMatrixWorld(true);
+    });
+    room.updateMatrixWorld(true);
+  }
+
+
   function camBaseToSpherical(out = SPHERE) {
     const rel = new THREE.Vector3().copy(camBase).sub(camTarget);
     out.setFromVector3(rel);
@@ -434,20 +645,24 @@
       shader.uniforms.uFalloff = { value: falloff };
       shader.uniforms.uFresnel = { value: fresnel };
 
-      shader.vertexShader = `varying vec3 vWorldPosition;\n` + shader.vertexShader;
+      // shader.vertexShader = `varying vec3 vWorldPosition;\n` + shader.vertexShader;
       shader.fragmentShader = `varying vec3 vWorldPosition;\n` + shader.fragmentShader;
 
-      shader.vertexShader = shader.vertexShader.replace(
-        '#include <project_vertex>',
-        `
-        vWorldPosition = (modelMatrix * vec4( transformed, 1.0 )).xyz;
-        #include <project_vertex>
-        `
-      );
+      //shader.vertexShader = shader.vertexShader.replace(
+      //  '#include <project_vertex>',
+      //  `
+      //  vWorldPosition = (modelMatrix * vec4( transformed, 1.0 )).xyz;
+      //  #include <project_vertex>
+      //  `
+      //);
 
       shader.fragmentShader = shader.fragmentShader.replace(
         '#include <common>',
         `
+        #ifdef GL_ES
+        precision highp float;
+        precision highp int;
+        #endif
         #include <common>
         uniform vec3 uHit;
         uniform float uTime;
@@ -457,8 +672,16 @@
         uniform float uSpeed;
         uniform float uFalloff;
         uniform float uFresnel;
+        
         float ripple(vec3 p, vec3 c, float t){
           float d = length(p - c) + 1e-5;
+          float w = sin(uFreq * (d - uSpeed * t));
+          float env = exp(-uFalloff * d);
+          return w * env;
+        }
+        // Use view-space positions for better precision
+        float rippleVS(vec3 pVS, vec3 cVS, float t){
+          float d = length(pVS - cVS) + 1e-5;
           float w = sin(uFreq * (d - uSpeed * t));
           float env = exp(-uFalloff * d);
           return w * env;
@@ -468,11 +691,24 @@
         '#include <lights_fragment_end>',
         `
         #include <lights_fragment_end>
-        float r = ripple(vWorldPosition, uHit, uTime) * uPulse;
-        vec3 nrm = normalize( vNormal );
-        vec3 vdir = normalize( -vViewPosition );
+        // Built-ins:
+        // - vViewPosition: view-space *negative* position (Three convention)
+        // - viewMatrix: already defined, DO NOT redeclare
+        vec3 pVS  = -vViewPosition;
+        vec3 hitVS = (viewMatrix * vec4(uHit, 1.0)).xyz;
+
+        float r = rippleVS(pVS, hitVS, uTime) * uPulse;
+
+        // Fresnel in view space, but gate it by |r| so it cannot flood the surface
+        vec3 nrm  = normalize(vNormal);
+        vec3 vdir = normalize(-vViewPosition);
         float fres = pow(1.0 - max(0.0, dot(nrm, vdir)), 2.0) * uFresnel;
-        vec3 glow = uColor * clamp(0.0, 1.0, 0.25 * r + 0.15 * fres * uPulse);
+
+        float ring = smoothstep(0.01, 0.25, abs(r));      // around the wavefront
+        float crest = max(0.0, r);                        // only positive crest contributes
+
+        vec3 glow = uColor * (0.30 * crest + 0.08 * fres * ring * uPulse);
+
         totalEmissiveRadiance += glow;
         `
       );
@@ -594,7 +830,6 @@
   const STEP_THRESHOLD = 80;
 
   function onWheel(e) {
-    if (isTransitioning) return;
     wheelAccum += e.deltaY;
     if (Math.abs(wheelAccum) > STEP_THRESHOLD) {
       const dir = wheelAccum > 0 ? 1 : -1;
@@ -604,6 +839,19 @@
   }
 
   function stepScene(dir) {
+    // 0 = Home, 1 = Projects (by your scenes array)
+    if (explodeReady)
+      {if (dir > 0 && idx === 0) {
+        // Home → Projects: do the explode + fly-in
+        transitionHomeToProjects();
+        return;
+      }
+      if (dir < 0 && idx === 1) {
+        // Projects → Home: do the implode + fly-out
+        transitionProjectsToHome();
+        return;
+      }    
+    }
     const next = (idx + dir + scenes.length) % scenes.length;
     isTransitioning = true;
     gotoScene(next);
@@ -909,8 +1157,12 @@
       openPanel(which, kind);
       // menu navigate
       if (kind === 'link') {
-        if (which === 'Home')    gotoByName('Home');          // virus (room)
+        if (which === 'Home'){
+          if (idx === 1 && explodeReady) { transitionProjectsToHome(); return; }
+          gotoByName('Home');          // virus (room)
+        }
         if (which === 'Projects'){
+          if (idx === 0 && explodeReady) { transitionHomeToProjects(); return; }
           isProjectsOpen = !isProjectsOpen;
           layoutAccordion(true);
           gotoByName('Projects');                         // projects scene = sphere
@@ -1267,6 +1519,8 @@
         const box = new THREE.Box3().setFromObject(room);
         roomGroundY = box.min.y;
 
+        // prepRoomExplode();
+
         // store better local offsets on the room group
         sections.home.userData.localCam  = new THREE.Vector3(2.2, roomGroundY + 1.6, 4.8);
         sections.home.userData.localLook = new THREE.Vector3(0,   roomGroundY + 0.5, 0);
@@ -1380,7 +1634,7 @@
 
     const items = ['Home', 'Projects', 'People', 'Contact'];
     items.forEach((label, i) => {
-      const m = makeTextMesh(label, { fontSize: 48, color: '#0f1115', bg: 'rgba(255,255,255,0.65)' });
+      const m = makeTextMesh(label, { fontSize: 72, color: '#0f1115', bg: 'rgba(255,255,255,0.65)' });
       m.userData.key = label;
       m.userData.hover = 0; 
       m.userData.basePos = new THREE.Vector3(1.2, 0.9 - i * 0.4, -2.0); // ← base
