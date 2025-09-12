@@ -1,10 +1,19 @@
 <script>
   import { onMount } from 'svelte';
   import * as THREE from 'three';
+
+  // Post-processing
+  import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+  import { RenderPass }     from 'three/examples/jsm/postprocessing/RenderPass.js';
+  import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+  import { SSAOPass }       from 'three/examples/jsm/postprocessing/SSAOPass.js';
+  // import { SSGIPass }       from 'three/examples/jsm/postprocessing/SSGIPass.js'; // available in three/examples
+
   import { gsap } from 'gsap';
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
   let container;
+  let composer, renderPass, ssaoPass, ssgiPass, bloomPass;
 
   // core
   let scene, camera, renderer, sections;
@@ -1562,13 +1571,18 @@
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-    renderer.setClearColor(0xeeeeee, 1);
+    //renderer.setClearColor(0xeeeeee, 1);
+    //renderer.setClearColor('#666666'); // nice neutral
+    renderer.setClearColor(0x888888, 1); // medium grey
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     // SHADOWS
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
+    
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    
     container.appendChild(renderer.domElement);
 
     // Lights
@@ -1585,6 +1599,26 @@
     scene.add(dir);
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.45));
+    // --- POST FX COMPOSER ---
+    const size = new THREE.Vector2(window.innerWidth, window.innerHeight);
+    composer = new EffectComposer(renderer);
+
+    // 1) Base pass
+    renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    // SSAOPass needs normal+depth from an internal pass, it manages that itself
+    ssaoPass = new SSAOPass(scene, camera, size.x, size.y);
+    ssaoPass.kernelRadius = 8;        // 4..16 reasonable
+    ssaoPass.minDistance  = 0.002;    // clamp near
+    ssaoPass.maxDistance  = 0.18;     // how far AO samples
+    ssaoPass.output = SSAOPass.OUTPUT.Default; // blend over color
+    composer.addPass(ssaoPass);
+
+    const bloomRes = new THREE.Vector2(size.x, size.y);
+    bloomPass = new UnrealBloomPass(bloomRes, /*strength*/0.25, /*radius*/0.8, /*threshold*/0.72);
+    // Feel free to tweak: strength 0.5~1.1, threshold 0.65~0.8, radius 0.6~1.2
+    composer.addPass(bloomPass);
 
     // --- CUBE (PEOPLE) ---
     cube = new THREE.Mesh(
@@ -1627,10 +1661,19 @@
     createParticles();
 
     // 3D UI for Cube scene (attached to camera)
-    titleMesh = makeTextMesh("Ludo's Lab", { fontSize: 72, color: '#0f1115' });
+    titleMesh = makeTextMesh("Ludo's Lab", { fontSize: 72, color: '#ffffff' });
     camera.add(titleMesh);
     titleMesh.position.set(-1.5, 1.0, -2.0);
     titleMesh.visible = true;
+
+    // Subtitle (two lines)
+    const subtitleText = `Ludovic Autin\nMesoscale Modelling Group at Scripps`;
+    const subtitleMesh = makeTextMesh(subtitleText, { fontSize: 20, color: '#000000', lineHeight: 1.0 });
+    // attach as child
+    titleMesh.add(subtitleMesh);
+    // place just below title (Y offset depends on fontSize/scale)
+    subtitleMesh.position.set(-0.4, 0.75, -2.0);
+    subtitleMesh.visible = true;
 
     const items = ['Home', 'Projects', 'People', 'Contact'];
     items.forEach((label, i) => {
@@ -1711,6 +1754,11 @@
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+
+    if (composer) composer.setSize(window.innerWidth, window.innerHeight);
+    if (bloomPass) bloomPass.setSize(window.innerWidth, window.innerHeight);
+    if (ssaoPass) ssaoPass.setSize(window.innerWidth, window.innerHeight);
+
     // update particle pixel scaling
     if (particleMaterial) {
       particleMaterial.uniforms.uScale.value = window.devicePixelRatio * 1.0;
@@ -1893,7 +1941,8 @@
       offsetCurrent.set(0, 0, 0);
     }
 
-    renderer.render(scene, camera);
+    // renderer.render(scene, camera);
+    composer.render();
   }
 
   onMount(() => {
