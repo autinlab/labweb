@@ -40,6 +40,8 @@
   const offsetTarget = new THREE.Vector3();
   const offsetCurrent = new THREE.Vector3();
   const MAX_OFFSET_X = 0.6, MAX_OFFSET_Y = 0.35;
+  // --- right menu scale factor ---
+  const MENU_SCALE = 0.25; // 0.5 = half size
 
   // raycast / mouse
   const raycaster = new THREE.Raycaster();
@@ -860,42 +862,105 @@
   }
 
   // ---------- CanvasText helpers (3D text & panels) ----------
-  function makeTextMesh(text, { fontSize = 64, color = '#111', padding = 16, bg = null } = {}) {
-    const ctx = document.createElement('canvas').getContext('2d');
+  function makeTextMesh(
+    text,
+    {
+      fontSize = 64,
+      color = '#111',
+      // padding used only to give the glyphs breathing room in the TEXTURE.
+      // keeping this constant avoids mesh size jumps.
+      texPaddingPx = 16,
+      // padding of the WHITE CARD INSIDE the texture. Changing this
+      // changes the visual bg size WITHOUT affecting mesh size.
+      cardPaddingPx = 6,
+      bg = null,
+      radius = 16,
+      upsample = 2.0,
+      worldTextHeight = 0.35 // world height of the text line area
+    } = {}
+  ) {
+    // --- measure text in logical CSS pixels
+    const measure = document.createElement('canvas').getContext('2d');
     const font = `700 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
-    ctx.font = font;
-    const metrics = ctx.measureText(text);
-    const w = Math.ceil(metrics.width + padding * 2);
-    const h = Math.ceil(fontSize + padding * 2);
+    measure.font = font;
+    const m = measure.measureText(text);
 
-    ctx.canvas.width = w;
-    ctx.canvas.height = h;
+    // better height using ascent/descent when available
+    const asc = m.actualBoundingBoxAscent || fontSize * 0.8;
+    const desc = m.actualBoundingBoxDescent || fontSize * 0.2;
+    const textW = Math.ceil(m.width);
+    const textH = Math.ceil(asc + desc);
 
-    ctx.font = font;
-    ctx.textBaseline = 'top';
+    // --- build a hi-DPI canvas
+    const ctx = document.createElement('canvas').getContext('2d');
+    const dpr = (renderer?.getPixelRatio?.() || window.devicePixelRatio || 1) * upsample;
+
+    // texture size includes a CONSTANT texture padding (doesn't change mesh size)
+    const texW = textW + texPaddingPx * 2;
+    const texH = textH + texPaddingPx * 2;
+
+    ctx.canvas.width  = Math.max(2, Math.floor(texW * dpr));
+    ctx.canvas.height = Math.max(2, Math.floor(texH * dpr));
+    ctx.scale(dpr, dpr);
+
+    // --- draw the inner "card" (white rounded rect) WITHOUT changing texture size
     if (bg) {
-      ctx.fillStyle = bg;
-      ctx.fillRect(0,0,w,h);
-    }
-    ctx.fillStyle = color;
-    ctx.fillText(text, padding, padding);
+      const x = cardPaddingPx;
+      const y = cardPaddingPx;
+      const w = texW - cardPaddingPx * 2;
+      const h = texH - cardPaddingPx * 2;
 
+      ctx.fillStyle = bg;
+      ctx.beginPath();
+      const r = Math.min(radius, Math.min(w, h) * 0.5);
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // --- draw text centered within the texture padding
+    ctx.font = font;
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = color;
+
+    // position baseline so text is vertically centered in the texture
+    const drawX = texPaddingPx;
+    const drawY = texPaddingPx + asc;
+    ctx.fillText(text, drawX, drawY);
+
+    // --- texture & material
     const tex = new THREE.CanvasTexture(ctx.canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = Math.min(8, renderer?.capabilities?.getMaxAnisotropy?.() || 1);
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = true;
     tex.needsUpdate = true;
 
-    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
-    mat.side = THREE.DoubleSide;  
-    const aspect = w / h;
-    const planeH = 0.35; // world units
-    const planeW = planeH * aspect;
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      toneMapped: false
+    });
+    mat.side = THREE.DoubleSide;
+
+    // --- mesh size: match the *texture* aspect so it doesn't stretch
+    const aspectTex = texW / texH;            // ← use tex size, not pure text size
+    const planeH = worldTextHeight;
+    const planeW = planeH * aspectTex;
 
     const geo = new THREE.PlaneGeometry(planeW, planeH);
     const mesh = new THREE.Mesh(geo, mat);
+
     mesh.renderOrder = 10;
     mesh.userData.isText = true;
     return mesh;
   }
+
 
   function makePanelMesh(
     title,
@@ -1670,14 +1735,20 @@
 
     const items = ['Home', 'Projects', 'People', 'Contact'];
     items.forEach((label, i) => {
-      const m = makeTextMesh(label, { fontSize: 72, color: '#0f1115', bg: 'rgba(255,255,255,0.65)' });
+      const m = makeTextMesh(label, {
+        fontSize: 10,          // ← half-sized text
+        color: '#0f1115',
+        bg: 'rgba(255,255,255,0.65)',
+        padding: 16
+      });
       m.userData.key = label;
-      m.userData.hover = 0; 
-      m.userData.basePos = new THREE.Vector3(1.2, 0.9 - i * 0.4, -2.0); // ← base
+      m.userData.hover = 0;
+      m.userData.basePos = new THREE.Vector3(1.2, 0.9 - i * 0.4, -2.0);
       camera.add(m);
       m.position.copy(m.userData.basePos);
       m.visible = true;
-      // give them a tiny ripple too
+
+      // tiny ripple
       cloneAndRippleMesh(m, { color: 0x66ccff, fresnel: 0.6, falloff: 4.0 });
       linkMeshes.push(m);
     });
