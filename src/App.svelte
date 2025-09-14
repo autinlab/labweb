@@ -572,7 +572,11 @@
 
     // DPR clamp
     const dpr = Math.min(isMobile ? DPR_MAX_MOBILE : DPR_MAX_DESKTOP, window.devicePixelRatio || 1);
-    renderer.setPixelRatio(dpr);
+    // renderer.setPixelRatio(dpr);
+    // renderer
+    renderer.setPixelRatio(Math.min(isMobile ? 1.25 : 1.5, window.devicePixelRatio || 1)); // was 2.0
+    renderer.antialias = false; // if you had it true anywhere
+
     renderer.setSize(w, h);
 
     // FOV adjustment
@@ -601,8 +605,9 @@
     // Shadow map budget (lighter on mobile)
     const dir = scene.children.find(o => o.isDirectionalLight);
     if (dir) {
-      dir.shadow.mapSize.set(isMobile ? 1024 : 2048, isMobile ? 1024 : 2048);
+      dir.shadow.mapSize.set(isMobile ? 512 : 1024, isMobile ? 512 : 1024);
       dir.shadow.needsUpdate = true;
+      dir.shadow.autoUpdate = false; // only update once after init/layout
     }
 
     // *** Re-anchor UI after all above changes ***
@@ -731,7 +736,7 @@
     {
       name: 'Home',
       // provisional until GLB gives us ground
-      get cam() { return camFromSection(sections.home, new THREE.Vector3(0, 0, 20), new THREE.Vector3(0, 0, 0)); },
+      get cam() { return camFromSection(sections.home, new THREE.Vector3(0, 0, 10), new THREE.Vector3(0, 0, 0)); },
       enter: () => {
         hideContactOverlay();
         sections.home.visible = true;
@@ -961,61 +966,130 @@
     return mesh;
   }
 
+  // helper: returns wrapped lines + total pixel height for a given font & width
+  function wrapLines(ctx, text, maxWidth, lineHeight) {
+    const words = (text || "").split(/\s+/);
+    const lines = [];
+    let line = "";
+
+    for (let i = 0; i < words.length; i++) {
+      const test = line ? line + " " + words[i] : words[i];
+      const w = ctx.measureText(test).width;
+      if (w > maxWidth && line) {
+        lines.push(line);
+        line = words[i];
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+    const height = Math.max(lineHeight, lines.length * lineHeight);
+    return { lines, height };
+  }
 
   function makePanelMesh(
     title,
     body,
     {
-      width = 1.8,
-
-      // Canvas styling
-      bg = '#ffffff',                 // panel background
-      titleColor = '#0f1115',         // title text color
-      bodyColor  = '#0f1115',         // body text color
-      radius = 24,                    // corner radius
-      titleFont = 'bold 64px system-ui,-apple-system,Segoe UI,Roboto,sans-serif',
+      width = 1.8,                 // world units (X size of the plane)
+      bg = '#ffffff',              // panel background (set to null for transparent)
+      titleColor = '#0f1115',
+      bodyColor  = '#0f1115',
+      radius = 24,
+      titleFont = '700 64px system-ui,-apple-system,Segoe UI,Roboto,sans-serif',
       bodyFont  = '400 40px system-ui,-apple-system,Segoe UI,Roboto,sans-serif',
-
-      // Material / UI behavior
-      depthUI = true,                 // treat as UI: disable depth test/write
-      renderOrder = 100,              // ensure on top if depthUI
-
-      // Emissive options for MeshStandardMaterial
-      emissive = 0x000000,            // number | string (e.g. '#66ccff')
-      emissiveIntensity = 0.0,        // 0..n
-      emissiveFromMap = false         // use the same canvas texture as emissiveMap
+      paddingPx = 48,              // inner padding in pixels
+      gapPx     = 28,              // space between title and body in pixels
+      lineHeightTitlePx = 68,
+      lineHeightBodyPx  = 50,
+      // Material/UI behavior
+      depthUI = true,
+      renderOrder = 100,
+      emissive = 0x000000,
+      emissiveIntensity = 0.0,
+      emissiveFromMap = false
     } = {}
   ) {
-    // --- draw canvas ---
+    // --- device pixel ratio for crisp text ---
+    const dpr = (renderer?.getPixelRatio?.() ?? window.devicePixelRatio ?? 1);
+
+    // We'll size canvas to content, then map it to a plane of given world width.
     const ctx = document.createElement('canvas').getContext('2d');
-    const W = 1024, H = 512;
-    ctx.canvas.width = W; ctx.canvas.height = H;
 
-    // background (opaque by default)
-    ctx.fillStyle = bg;
-    //ctx.lineWidth = 1;
-    //ctx.strokeStyle = 'rgba(0,0,0,0.08)';
-    roundRect(ctx, 16, 16, W - 32, H - 32, radius);
-    //ctx.stroke();
+    // 1) Measure title width and set a base content width
+    ctx.font = titleFont;
+    const maxTextWidthPx = Math.max(
+      512,                            // sensible minimum
+      Math.min(1200, ctx.measureText(title || "").width)  // clamp to keep from exploding
+    );
 
-    // title
+    // Final drawing width = content width + left+right padding
+    const contentW = maxTextWidthPx;
+    const texW = Math.round((contentW + paddingPx * 2) * dpr);
+
+    // 2) Measure multi-line body height
+    ctx.font = bodyFont;
+    const { lines: bodyLines, height: bodyH } = wrapLines(ctx, body || "", contentW, lineHeightBodyPx);
+
+    // 3) Title height (one line; you can wrap too if you want)
+    ctx.font = titleFont;
+    const titleH = lineHeightTitlePx;
+
+    // 4) Compute total canvas height
+    const innerHeight = titleH + (body ? gapPx : 0) + bodyH;
+    const texH = Math.round((innerHeight + paddingPx * 2) * dpr);
+
+    // 5) Allocate canvas @ DPR
+    ctx.canvas.width  = texW;
+    ctx.canvas.height = texH;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw in CSS px coordinates
+
+    // 6) Background (optional)
+    if (bg) {
+      ctx.fillStyle = bg;
+      const x = 0.5, y = 0.5; // crisp edges
+      const w = texW / dpr - 1, h = texH / dpr - 1;
+      const r = Math.min(radius, Math.min(w, h) * 0.08);
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 7) Draw title
+    let cursorX = paddingPx;
+    let cursorY = paddingPx;
     ctx.fillStyle = titleColor;
     ctx.font = titleFont;
     ctx.textBaseline = 'top';
-    ctx.fillText(title, 48, 72);
+    ctx.fillText(title || "", cursorX, cursorY);
+    cursorY += titleH + (body ? gapPx : 0);
 
-    // body
-    ctx.fillStyle = bodyColor;
-    ctx.font = bodyFont;
-    wrapText(ctx, body, 48, 140, W - 96, 52);
+    // 8) Draw body (wrapped)
+    if (bodyLines.length) {
+      ctx.fillStyle = bodyColor;
+      ctx.font = bodyFont;
+      for (const line of bodyLines) {
+        ctx.fillText(line, cursorX, cursorY);
+        cursorY += lineHeightBodyPx;
+      }
+    }
 
-    // --- texture & material ---
+    // 9) Texture & material
     const tex = new THREE.CanvasTexture(ctx.canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = Math.min(8, renderer?.capabilities?.getMaxAnisotropy?.() || 1);
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = true;
 
     const mat = new THREE.MeshStandardMaterial({
       map: tex,
-      transparent: false,
+      transparent: !bg, // allow transparency when bg is null
       roughness: 0.8,
       metalness: 0.0,
       emissive: new THREE.Color(emissive),
@@ -1023,21 +1097,20 @@
       emissiveMap: emissiveFromMap ? tex : null
     });
     mat.side = THREE.DoubleSide;
-
     if (depthUI) {
       mat.depthTest = false;
       mat.depthWrite = false;
     }
 
-    // ripple (your helper) — keep it, still works with emissive
+    // (keep your ripple glow)
     patchMaterialForRipple(mat, { color: 0x66ccff, fresnel: 0.8, falloff: 3.2, speed: 2.0, freq: 10.0 });
 
-    // --- mesh ---
-    const aspect = W / H;
-    const height = width / aspect;
+    // 10) Plane geometry with matching world height
+    const aspect = (texW / dpr) / (texH / dpr);
+    const height = width / aspect; // auto height from canvas
     const geo = new THREE.PlaneGeometry(width, height);
-    const mesh = new THREE.Mesh(geo, mat);
 
+    const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = false;
     mesh.receiveShadow = true;
     mesh.userData.isPanel = true;
@@ -1268,7 +1341,7 @@
 
   function openPanel(which, kind='link') {
     const linkContents = {
-      Home: 'Welcome!',
+      Home: 'Our lab develops new technologies to explore the molecular architecture of life at the mesoscale — the crowded space inside cells where molecules self-assemble into viruses, organelles, and complex cellular landscapes. We build whole-cell models with cellPACK and related tools, generate realistic synthetic tomograms, and create interactive visualization platforms that bring these invisible worlds to researchers, students, and the public. Our goal is to make the mesoscale widely accessible.',
       People:   'Collaborators, mentors, and lab friends. Always hiring curious minds.',
       Projects: 'Open-source tools and interactive experiences for mesoscale biology.',
       Contacts: 'Say hello: autin@scripps.edu — let’s build weird & useful things.'
@@ -1317,7 +1390,7 @@
     }
 
     panelMesh = makePanelMesh(title, body, {
-      width: 2.0,
+      width: 0.65,
       bg: '#0f1115',
       titleColor: '#e8f0f7',
       bodyColor: '#c9d6e2',
@@ -1328,7 +1401,7 @@
     camera.add(panelMesh);
 
     // left column under title
-    panelMesh.position.set(-1.2 * uiScale, 0.3 * uiScale, -2.0);
+    panelMesh.position.set(-1.2 * uiScale, -5, -2.0);
     panelMesh.scale.setScalar(uiScale);
 
     // ALWAYS on top
@@ -1374,11 +1447,11 @@
     // Make the panel
     personPanel = makePanelMesh(info.name, info.desc, {
       width: 4.2,
-      bg: '#fff9ea',
+      bg: '#000000ff',
       titleColor: '#fdfeff',
       bodyColor: '#fdfdfd',
       emissive: '#66ccff',
-      emissiveIntensity: 1.18,
+      emissiveIntensity: 0.08,
       emissiveFromMap: true,    // subtle glow from the canvas texture
       depthUI: true,            // keep as UI (always on top)
       renderOrder: 20
@@ -1667,9 +1740,9 @@
 
     // SSAOPass needs normal+depth from an internal pass, it manages that itself
     ssaoPass = new SSAOPass(scene, camera, size.x, size.y);
-    ssaoPass.kernelRadius = 8;        // 4..16 reasonable
-    ssaoPass.minDistance  = 0.002;    // clamp near
-    ssaoPass.maxDistance  = 0.18;     // how far AO samples
+    ssaoPass.kernelRadius = 4;        // 4..16 reasonable
+    ssaoPass.minDistance  = 0.01;    // clamp near
+    ssaoPass.maxDistance  = 0.12;     // how far AO samples
     ssaoPass.output = SSAOPass.OUTPUT.Default; // blend over color
     composer.addPass(ssaoPass);
 
@@ -1799,7 +1872,6 @@
     // start
     gotoScene(0);
 
-    window.addEventListener('resize', onResize);
     window.addEventListener('wheel', onWheel, { passive: true });
     renderer.domElement.addEventListener('pointermove', onPointerMove, { passive: true });
     renderer.domElement.addEventListener('pointerdown', onPointerDown, { passive: true });
@@ -1810,6 +1882,11 @@
     renderer.domElement.addEventListener('pointerup', onPointerUp, { passive: true });
     renderer.domElement.addEventListener('pointerleave', onPointerUp, { passive: true });
 
+    // Hook it up:
+    window.addEventListener('resize', ()=>{ onResize(); requestRender(); });
+    renderer.domElement.addEventListener('pointermove', ()=>{ requestRender(); }, {passive:true});
+    // when gsap updates camera/objects:
+    gsap.ticker.add(()=>{ requestRender(); });
   
     updateResponsive(); 
   }
@@ -1885,12 +1962,12 @@
       // try to align its left edge to UI margin
       const px = -halfW + UI_MARGIN + pw * 0.5;
       // below title (leave a small gap)
-      let py = halfH - UI_MARGIN;
+      let py = halfH;// - UI_MARGIN;
       if (titleMesh) {
         const { h: th } = meshSize(titleMesh);
         py = py - th - 1.56; // gap
       }
-      py = py - ph * 0.5;
+      //py = py - ph * 0.5;
       // if panel too tall for viewport, optionally hide or clamp
       panelMesh.visible = (ph + UI_MARGIN * 2) < (halfH * 2);
       if (panelMesh.visible) place(panelMesh, px, py);
@@ -1922,11 +1999,23 @@
     // but if you want a fallback “right column” layout when sphere isn’t visible, you could add it here.
   }
 
-  function animate() {
-    requestAnimationFrame(animate);
+  let needsRender = true;
 
-    const dt = Math.min(0.033, clock.getDelta());
-    const t = clock.elapsedTime;
+  function requestRender(){ needsRender = true; }
+
+
+  let last = 0;
+  const TARGET_FPS = 45;
+  const MIN_DT = 1 / TARGET_FPS;
+  function animate(now=0) {
+    requestAnimationFrame(animate);
+    const t = now * 0.001;
+    const dt = t - last;
+    if (dt < MIN_DT) return;     // skip frame
+    last = t;
+    
+    //const dt = Math.min(0.033, clock.getDelta());
+    //const t = clock.elapsedTime;
 
     if (cube?.visible) cube.rotation.y += 0.003;
 
@@ -2006,6 +2095,10 @@
     }
 
     // renderer.render(scene, camera);
+    // physics / tweens may still run; set needsRender = true inside those callbacks if visible changes
+    if (!needsRender) return;
+    needsRender = false;
+    
     composer.render();
   }
 
