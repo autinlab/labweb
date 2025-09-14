@@ -33,7 +33,7 @@
   let roomGroundY = 0;
 
   // camera state + parallax
-  const camBase = new THREE.Vector3(0, 0, 5);
+  const camBase = new THREE.Vector3(0, 0, 10);
   const camPos  = new THREE.Vector3().copy(camBase);
   const camTarget = new THREE.Vector3(0, 0, 0);
   const lookAtProxy = { x: camTarget.x, y: camTarget.y, z: camTarget.z };
@@ -54,7 +54,7 @@
   'Virus lesson XR',
   'Mesoscale Explorer'
 ];
-
+  let PROJECT_SECTION_POS=[];
   let allUiMeshes = [];     // convenience: links + projects
 
   let titleMesh = [];
@@ -197,67 +197,66 @@
   function unlockInput() {
     isTransitioning = false;
   }
-
+  
   function transitionHomeToProjects() {
     if (!room || !explodeReady) { gotoByName('Projects'); return; }
-    
-    // kill any previous run (if user spam-scrolls)
-    if (flyTl) { flyTl.kill(); flyTl = null; }
-  
-    lockInput();
 
-    // ALWAYS start from canonical base pose
+    // kill any previous run
+    if (flyTl) { flyTl.kill(); flyTl = null; }
+
+    lockInput();
     resetRoomPieces();
 
-    // ensure home is visible / projects hidden at start
+    // show the room; hide the separate projects sphere for the flight
     sections.home.visible = true;
-    sphere.visible = false;
+    // sphere.visible = false;
     projectMeshes.forEach(m => m.visible = false);
 
-    // camera path: from current Home cam to inside the room then towards Projects anchor
-    // pick a point a bit inside the bbox center
+    // Camera fly target just inside the room bbox center
     const inside = roomCenter.clone().add(new THREE.Vector3(0.0, 0.4, 0.0));
     const look   = roomCenter.clone().add(new THREE.Vector3(0, 0.1, 0));
 
     flyTl = gsap.timeline({
-      defaults:{ ease:'power3.inOut' },
+      defaults: { ease: 'power3.inOut' },
       onComplete: () => {
-        // handoff: show projects scene (sphere + satellites animation)
-        sections.home.visible = false;
-        sphere.visible = true;
+        // ✅ Rebase the Projects section into the Home level (no vertical hop)
+        sections.project.position.copy(new THREE.Vector3(0.0, 0.0, 0.0));
+
+        // ✅ Place the real Projects sphere AT the inside point of the exploded view
+        // sphere.position.copy(inside);
+        // sphere.visible = true;
+
+        // ✅ Switch logic to Projects (UI opens) WITHOUT touching the camera
         isProjectsOpen = true;
         layoutAccordion(true);
-        gotoByName('Projects'); // retween to your Projects cam
+        setSceneNoTweenByName('Projects');
+
+        // show the satellites in a ring facing the camera
+        animateProjectsToRing({ radius: 1.6 * uiScale, dur: 0.6 });
+
         safeUnlock();
       }
     });
 
-    // step 1: subtle pull toward room before explosion
-    flyTl.to(camBase, { 
-      x: inside.x + 1.2, y: inside.y + 0.8, z: inside.z + 3.2, duration: 0.6 
-    }, 0);
-    flyTl.to(lookAtProxy, { 
-      x: look.x, y: look.y, z: look.z, duration: 0.6, 
+    // Step 1: gentle pull toward room
+    flyTl.to(camBase, { x: inside.x + 1.2, y: inside.y + 0.8, z: inside.z + 3.2, duration: 0.6 }, 0);
+    flyTl.to(lookAtProxy, {
+      x: look.x, y: look.y, z: look.z, duration: 0.6,
       onUpdate: () => camTarget.set(lookAtProxy.x, lookAtProxy.y, lookAtProxy.z)
     }, 0);
 
-    // step 2: explode pieces outward while dollying inside
+    // Step 2: explode pieces + dolly inside
     const EXPLODE_DIST = 1.8;
     const EXPLODE_TIME = 0.9;
 
     roomPieces.forEach(({ mesh, parent, basePos, baseQuat, worldPos }) => {
-      // world-space direction from room center to piece center
       const dirW = new THREE.Vector3().subVectors(worldPos, roomCenter);
       const len = Math.max(0.001, dirW.length());
       dirW.multiplyScalar(1 / len);
 
-      // world target
       const targetW = worldPos.clone().addScaledVector(dirW, EXPLODE_DIST * Math.log2(1.0 + len));
-
-      // convert world → parent-local so we tween the mesh’s LOCAL position
       const targetL = parent.worldToLocal(targetW.clone());
 
-      // a small delta rotation around the explode axis (optional)
       const axis = dirW.clone().normalize();
       const deltaQuat = new THREE.Quaternion().setFromAxisAngle(axis, 0.35);
       const targetQuat = baseQuat.clone().premultiply(deltaQuat);
@@ -265,70 +264,52 @@
       gsap.to(mesh.position, { x: targetL.x, y: targetL.y, z: targetL.z, duration: EXPLODE_TIME, ease: 'power3.out' });
       gsap.to(mesh.quaternion, { x: targetQuat.x, y: targetQuat.y, z: targetQuat.z, w: targetQuat.w, duration: EXPLODE_TIME, ease: 'power2.out' });
     });
-
-
-    flyTl.to(camBase, {
-      x: inside.x, y: inside.y + 0.22, z: inside.z + 1.2,
-      duration: EXPLODE_TIME, ease:'power3.out'
-    }, 0.35);
-    flyTl.to(lookAtProxy, {
-      x: inside.x, y: inside.y, z: inside.z,
-      duration: EXPLODE_TIME, ease:'power3.out',
-      onUpdate: () => camTarget.set(lookAtProxy.x, lookAtProxy.y, lookAtProxy.z)
-    }, 0.35);
-
-    // step 3: fade room a bit as we transition to Projects (optional)
-    flyTl.to(room, { 
-      visible: true, duration: 0, onComplete: ()=>{} 
-    }, 0);
+    // gotoScene(1);
   }
 
   function transitionProjectsToHome() {
     if (!room || !explodeReady) { gotoByName('Home'); return; }
-    
     if (flyTl) { flyTl.kill(); flyTl = null; }
 
     lockInput();
 
-    // ensure home is visible to see the implode
+    // Ensure room is visible so we can watch the implode
     sections.home.visible = true;
 
+    // Hide satellites and tuck sphere for the flight out (we’ll reset after)
+    projectMeshes.forEach(m => m.visible = false);
+
     flyTl = gsap.timeline({
-      defaults:{ ease:'power3.inOut' },
+      defaults: { ease: 'power3.inOut' },
       onComplete: () => {
-        // reset UI and hide project bits
+        // Reset all pieces to their base local transforms
+        resetRoomPieces();
+
+        // ✅ Put the Projects section back to its original position (below Home)
+        // sections.project.position.copy(PROJECT_SECTION_POS);
+
+        // Optionally hide the in-room sphere; your Projects scene will show it again as needed
+        // sphere.visible = true;
+
+        // Close the ring in UI
         isProjectsOpen = false;
         layoutAccordion(true);
-        sphere.visible = false;
+
+        // Normal scene jump back
         gotoByName('Home');
-        // return all meshes to base positions exactly
-        roomPieces.forEach(({ mesh, basePos }) => { mesh.position.copy(basePos); });
+
         unlockInput();
       }
     });
 
-    // pull camera back out a bit
+    // Compute a nice “outside” camera pose using the live bbox
     const box = new THREE.Box3().setFromObject(room);
     const homeLook = roomCenter.clone().add(new THREE.Vector3(0, 0.1, 0));
     const homePos  = roomCenter.clone().add(new THREE.Vector3(2.2, (box.min.y) + 1.6, 4.8));
 
-    flyTl.to(camBase, { x: homePos.x, y: homePos.y, z: homePos.z, duration: 0.9 }, 0);
-    flyTl.to(lookAtProxy, { 
-      x: homeLook.x, y: homeLook.y, z: homeLook.z, duration: 0.9, 
-      onUpdate: () => camTarget.set(lookAtProxy.x, lookAtProxy.y, lookAtProxy.z)
-    }, 0);
-
-    // implode the pieces back to their base poses
-    roomPieces.forEach(({ mesh, basePos }, i) => {
-      flyTl.to(mesh.position, { 
-        x: basePos.x, y: basePos.y, z: basePos.z, duration: 0.9, ease:'power3.in' 
-      }, 0.05 + i * 0.002);
-      flyTl.to(mesh.rotation, {
-        x: 0, y: 0, z: 0, duration: 0.9, ease:'power2.in'
-      }, 0.05 + i * 0.002);
-    });
-    flyTl.eventCallback('onComplete', () => { resetRoomPieces(); });
+    // gotoScene(0);
   }
+
 
   function resetRoomPieces() {
     if (!explodeReady) return;
@@ -748,12 +729,12 @@
     {
       name: 'Home',
       // provisional until GLB gives us ground
-      get cam() { return camFromSection(sections.home, new THREE.Vector3(0, 0, 6), new THREE.Vector3(0, 0, 0)); },
+      get cam() { return camFromSection(sections.home, new THREE.Vector3(0, 0, 20), new THREE.Vector3(0, 0, 0)); },
       enter: () => {
         hideContactOverlay();
         sections.home.visible = true;
         cube.visible = false;
-        sphere.visible = false;
+        sphere.visible = true;
         particlePoints && (particlePoints.visible = false);
         particleCollider && (particleCollider.visible = false);
         if (isProjectsOpen) { isProjectsOpen = false; layoutAccordion(true); }
@@ -762,7 +743,7 @@
     },
     {
       name: 'Projects',
-      get cam() { return camFromSection(sections.project, new THREE.Vector3(0, 0, 5), new THREE.Vector3(0, 0, 0)); },
+      get cam() { return camFromSection(sections.project, new THREE.Vector3(0, 0, 4), new THREE.Vector3(0, 0, 0)); },
       enter: () => {
         hideContactOverlay();
         sections.home.visible = false;
@@ -813,6 +794,17 @@
   ];
   let idx = 0;
 
+  function setSceneNoTween(i) {
+    if (i === idx || i < 0 || i >= scenes.length) return;
+    idx = i;
+    const s = scenes[idx];
+    s.enter && s.enter(); // run enter() but do NOT touch camera
+  }
+
+  function setSceneNoTweenByName(name) {
+    const i = scenes.findIndex(s => s.name === name);
+    if (i >= 0) setSceneNoTween(i);
+  }
 
   function gotoScene(i) {
     if (i === idx || i < 0 || i >= scenes.length) return;
@@ -1167,7 +1159,7 @@
       // menu navigate
       if (kind === 'link') {
         if (which === 'Home'){
-          if (idx === 1 && explodeReady) { transitionProjectsToHome(); return; }
+          if (explodeReady) { transitionProjectsToHome(); return; }
           gotoByName('Home');          // virus (room)
         }
         if (which === 'Projects'){
@@ -1512,7 +1504,7 @@
         room.visible = true;
 
         // scale 1/100
-        room.scale.setScalar(0.01);
+        room.scale.setScalar(0.02);
 
         sections.home.add(room);
 
@@ -1528,7 +1520,7 @@
         const box = new THREE.Box3().setFromObject(room);
         roomGroundY = box.min.y;
 
-        // prepRoomExplode();
+        prepRoomExplode();
 
         // store better local offsets on the room group
         sections.home.userData.localCam  = new THREE.Vector3(2.2, roomGroundY + 1.6, 4.8);
@@ -1559,10 +1551,11 @@
     scene.add(sections.home, sections.people, sections.project, sections.contact);
 
     // order = Room → Cube → Sphere → Particles
-    ['home','project','people','contact'].forEach((key, i) => {
+    ['home','people','contact'].forEach((key, i) => {
       sections[key].position.set(0, -i * SECTION_GAP, 0);
     });
 
+    PROJECT_SECTION_POS = sections.project.position.clone();
 
     camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.copy(camBase);
